@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-event-exporter
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-event-exporter
+rules:
+  # core
+  - apiGroups: [""]
+    resources: ["events", "pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  # apps (needed for the errors you're seeing)
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  # batch (nice to have for event lookups)
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-event-exporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-event-exporter
+subjects:
+  - kind: ServiceAccount
+    name: k8s-event-exporter
+    namespace: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-event-exporter-config
+  namespace: observability
+data:
+  config.yaml: |
+    logLevel: warn
+    maxEventAgeSeconds: 120
+    omitLookup: false
+    kubeQPS: 10
+    kubeBurst: 20
+
+    route:
+      routes:
+        - match:
+            - receiver: "vector"
+
+    receivers:
+      - name: "vector"
+        webhook:
+          endpoint: "http://vector.observability.svc.cluster.local:9001"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-event-exporter
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: k8s-event-exporter }
+  template:
+    metadata:
+      labels: { app: k8s-event-exporter }
+    spec:
+      serviceAccountName: k8s-event-exporter
+      containers:
+        - name: exporter
+          image: ghcr.io/resmoio/kubernetes-event-exporter:latest
+          args: ["-conf", "/config/config.yaml"]
+          volumeMounts:
+            - name: cfg
+              mountPath: /config
+          resources:
+            requests: { cpu: "20m", memory: "32Mi" }
+            limits: { memory: "128Mi" }
+      volumes:
+        - name: cfg
+          configMap:
+            name: k8s-event-exporter-config

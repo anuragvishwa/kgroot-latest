@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: state-watcher
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: state-watcher
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "nodes", "events"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: state-watcher
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: state-watcher
+subjects:
+  - kind: ServiceAccount
+    name: state-watcher
+    namespace: observability
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: state-watcher
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: state-watcher }
+  template:
+    metadata:
+      labels: { app: state-watcher }
+    spec:
+      serviceAccountName: state-watcher
+      containers:
+        - name: state-watcher
+          image: docker.io/anuragvishwa/state-watcher:0.4
+          env:
+            - name: CLUSTER_NAME
+              value: "minikube"
+            - name: KAFKA_BOOTSTRAP
+              value: "host.minikube.internal:29092" # or use kafka-external.svc (see step 3)
+            - name: TOPIC_STATE
+              value: "state.k8s.resource"
+            - name: TOPIC_TOPO
+              value: "state.k8s.topology"
+            # ⬇️ add these for Prometheus targets
+            - name: PROM_URL
+              value: "http://prometheus-kube-prometheus-stack-prometheus.monitoring.svc:9090"
+            - name: TOPIC_PROM_TARGETS # if your image supports it
+              value: "state.prom.targets"
+            # optional: scrape interval if the image supports it
+            # - name: PROM_SCRAPE_INTERVAL
+            #   value: "30s"
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { memory: "128Mi" }

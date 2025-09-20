@@ -1,0 +1,495 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-config
+  namespace: observability
+data:
+  vector.toml: |
+    # ===================== Sources (Deployment) =====================
+    [sources.http_alerts]
+    type     = "http_server"
+    address  = "0.0.0.0:9000"
+    decoding.codec = "json"
+
+    [sources.http_k8s]
+    type     = "http_server"
+    address  = "0.0.0.0:9001"
+    decoding.codec = "json"
+
+    # ==================== Transforms ====================
+    # Explode/unwrap Alertmanager payloads into single alerts
+    [transforms.prom_alerts_explode]
+    type   = "remap"
+    inputs = ["http_alerts"]
+    source = '''
+    if is_array(.alerts) {
+      . = unnest!(.alerts)
+    } else if is_object(.alerts) {
+      . = .alerts
+    }
+    '''
+
+    # Normalize Prometheus alerts (0.39-safe)
+    [transforms.prom_alerts_norm]
+    type   = "remap"
+    inputs = ["prom_alerts_explode"]
+    source = '''
+    .event_id   = uuid_v4()
+    .event_time = to_string(now())
+    .etype      = "prom.alert"
+
+    if !is_object(.labels) { .labels = {} }
+    if !is_object(.annotations) { .annotations = {} }
+
+    # ---- alertname (reason) ----
+    alertname, _ = to_string(.labels.alertname)
+    if is_null(alertname) || alertname == "" {
+      alertname, _ = to_string(.alerts.labels.alertname)
+    }
+    if is_null(alertname) || alertname == "" {
+      alertname, _ = to_string(.commonLabels.alertname)
+    }
+    if is_null(alertname) || alertname == "" { alertname = "UNKNOWN" }
+    .reason = alertname
+
+    # ---- status ----
+    st, _ = to_string(.status)
+    if is_null(st) || st == "" {
+      st, _ = to_string(.alerts.status)
+    }
+    if is_null(st) || st == "" { st = "firing" }
+    .status = st
+
+    # ---- severity ----
+    sev, _ = to_string(.labels.severity)
+    if is_null(sev) || sev == "" {
+      sev, _ = to_string(.alerts.labels.severity)
+    }
+    if is_null(sev) || sev == "" {
+      sev, _ = to_string(.commonLabels.severity)
+    }
+    if is_null(sev) || sev == "" { sev = "WARNING" }
+    .severity = upcase(sev)
+
+    # ---- message ----
+    msg, _ = to_string(.annotations.summary)
+    if is_null(msg) || msg == "" {
+      msg, _ = to_string(.alerts.annotations.summary)
+    }
+    if is_null(msg) || msg == "" {
+      msg, _ = to_string(.annotations.description)
+    }
+    if is_null(msg) || msg == "" {
+      msg, _ = to_string(.alerts.annotations.description)
+    }
+    if is_null(msg) { msg = "" }
+    .message = msg
+
+    # ---- subject (ns/name/kind) ----
+    ns, _ = to_string(.labels.namespace)
+    if is_null(ns) || ns == "" {
+      ns, _ = to_string(.alerts.labels.namespace)
+    }
+    if is_null(ns) || ns == "" {
+      ns, _ = to_string(.commonLabels.namespace)
+    }
+    if is_null(ns) { ns = "" }
+
+    pod, _ = to_string(.labels.pod)
+    if is_null(pod) || pod == "" {
+      pod, _ = to_string(.alerts.labels.pod)
+    }
+    if is_null(pod) { pod = "" }
+
+    svc, _ = to_string(.labels.service)
+    if is_null(svc) || svc == "" {
+      svc, _ = to_string(.alerts.labels.service)
+    }
+    if is_null(svc) || svc == "" {
+      svc, _ = to_string(.labels.job)
+      if is_null(svc) || svc == "" {
+        svc, _ = to_string(.alerts.labels.job)
+      }
+    }
+    if is_null(svc) { svc = "" }
+
+    kind = if pod != "" { "Pod" } else { "Service" }
+    name = if pod != "" { pod } else { svc }
+    .subject = { "kind": kind, "ns": ns, "name": name }
+    '''
+
+    # Normalize Kubernetes Events
+    [transforms.k8s_events_norm]
+    type   = "remap"
+    inputs = ["http_k8s"]
+    source = '''
+    evt = .
+    if exists(.event) { evt = .event }
+
+    ts  = parse_timestamp(evt.metadata.creationTimestamp, format: "%+") ?? now()
+    uid = to_string(evt.metadata.uid) ?? ""
+    rsn = to_string(evt.reason) ?? "Unknown"
+
+    .event_id   = sha1(to_string(ts) + uid + rsn)
+    .event_time = to_string(ts)
+    .etype      = "k8s.event"
+    .severity   = upcase(to_string(evt.type) ?? "NORMAL")
+    .reason     = rsn
+    .message    = to_string(evt.message) ?? "n/a"
+
+    subj  = evt.involvedObject
+    skind = to_string(subj.kind)      ?? "Unknown"
+    sns   = to_string(subj.namespace) ?? "default"
+    sname = to_string(subj.name)      ?? "unknown"
+    suid  = to_string(subj.uid)       ?? uid
+
+    .subject = { "kind": skind, "uid": suid, "ns": sns, "name": sname }
+    .source  = { "component": to_string(evt.source.component) ?? "", "host": to_string(evt.source.host) ?? "" }
+    '''
+
+    # ---- raw.events fan-in (raw HTTP payloads) ----
+    [transforms.raw_prom_enrich]
+    type   = "remap"
+    inputs = ["http_alerts"]
+    source = '''
+    # Build a stable Kafka key for raw Alertmanager payloads.
+    # Preference: first alert fingerprint → groupKey → job|ns|service
+
+    k = ""
+
+    # 1) Try first alert's fingerprint (AM v4 grouped payloads)
+    if exists(.alerts[0].fingerprint) {
+      fp, _ = to_string(.alerts[0].fingerprint)
+      if !is_null(fp) && fp != "" { k = fp }
+    }
+
+    # 2) Fallback to Alertmanager's groupKey (readable, stable per group)
+    if k == "" {
+      gk, _ = to_string(.groupKey)
+      if !is_null(gk) && gk != "" { k = gk }
+    }
+
+    # 3) Fallback to human key: job|namespace|service from commonLabels/labels
+    if k == "" {
+      ns, _ = to_string(.commonLabels.namespace)
+      if is_null(ns) || ns == "" { ns, _ = to_string(.labels.namespace) }
+      if is_null(ns) || ns == "" { ns = "default" }
+
+      job, _ = to_string(.commonLabels.job)
+      if is_null(job) || job == "" { job, _ = to_string(.labels.job) }
+      if is_null(job) || job == "" { job = "unknown" }
+
+      svc, _ = to_string(.commonLabels.service)
+      if is_null(svc) || svc == "" { svc, _ = to_string(.labels.service) }
+      if is_null(svc) || svc == "" { svc = job }
+
+      # Vector 0.39: no format(); concat strings instead
+      k = job + "|" + ns + "|" + svc
+    }
+
+    .kafka_key = k
+    .etype = "prom.alert.raw"
+    '''
+
+    [transforms.raw_k8s_enrich]
+    type   = "remap"
+    inputs = ["http_k8s"]
+    source = '''
+    k, _ = to_string(.event.metadata.uid)
+    if is_null(k) || k == "" { k, _ = to_string(.metadata.uid) }
+    if is_null(k) || k == "" { k = uuid_v4() }
+    .kafka_key = k
+    .etype = "k8s.event.raw"
+    '''
+
+    # ====================== Sinks (Deployment) =======================
+    [sinks.raw_prom_alerts]
+    type              = "kafka"
+    inputs            = ["prom_alerts_norm"]
+    bootstrap_servers = "${KAFKA_BOOTSTRAP}"
+    topic             = "raw.prom.alerts"
+    key_field         = "reason"
+    encoding.codec    = "json"
+    compression       = "zstd"
+
+    [sinks.raw_k8s_events]
+    type              = "kafka"
+    inputs            = ["k8s_events_norm"]
+    bootstrap_servers = "${KAFKA_BOOTSTRAP}"
+    topic             = "raw.k8s.events"
+    key_field         = "subject.uid"
+    encoding.codec    = "json"
+    compression       = "zstd"
+
+    [sinks.events_normalized]
+    type              = "kafka"
+    inputs            = ["prom_alerts_norm", "k8s_events_norm"]
+    bootstrap_servers = "${KAFKA_BOOTSTRAP}"
+    topic             = "events.normalized"
+    key_field         = "event_id"
+    encoding.codec    = "json"
+    compression       = "zstd"
+
+    [sinks.raw_events]
+    type              = "kafka"
+    inputs            = ["raw_prom_enrich", "raw_k8s_enrich"]
+    bootstrap_servers = "${KAFKA_BOOTSTRAP}"
+    topic             = "raw.events"
+    key_field         = "kafka_key"
+    encoding.codec    = "json"
+    compression       = "zstd"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vector
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: vector }
+  template:
+    metadata:
+      labels: { app: vector }
+    spec:
+      containers:
+        - name: vector
+          image: timberio/vector:0.39.0-alpine
+          args: ["-c", "/etc/vector/vector.toml"]
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: "kafka-external.observability.svc:29092"
+          ports:
+            - name: alerts
+              containerPort: 9000
+            - name: k8s-events
+              containerPort: 9001
+          volumeMounts:
+            - name: cfg
+              mountPath: /etc/vector/vector.toml
+              subPath: vector.toml
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { memory: "256Mi" }
+      volumes:
+        - name: cfg
+          configMap:
+            name: vector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vector
+  namespace: observability
+spec:
+  selector: { app: vector }
+  ports:
+    - name: alerts
+      port: 9000
+      targetPort: alerts
+    - name: k8s-events
+      port: 9001
+      targetPort: k8s-events
+
+# ===================== Logs pipeline (DaemonSet) =====================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-logs-config
+  namespace: observability
+data:
+  vector.toml: |
+    [sources.kubernetes_logs]
+    type = "kubernetes_logs"
+    # vector 0.39: set via env VECTOR_SELF_NODE_NAME
+    self_node_name = "${VECTOR_SELF_NODE_NAME}"
+
+    # ⛔ Do not ingest Vector’s own logs
+    exclude_paths_glob_patterns = [
+      "/var/log/containers/*vector*.log",
+      "/var/log/pods/*_vector-logs_*/**",
+      "/var/log/pods/*_vector_*/**"
+    ]
+
+    [transforms.unwrap]
+    type   = "remap"
+    inputs = ["kubernetes_logs"]
+    source = '''
+    # Unwrap once
+    if is_string(.message) {
+      inner, err = parse_json(.message)
+      if err == null && is_object(inner) {
+        . = merge!(., inner)
+        del(.message)
+      }
+    }
+
+    # Unwrap twice (rare, but seen)
+    if is_string(.message) {
+      inner2, err2 = parse_json(.message)
+      if err2 == null && is_object(inner2) {
+        . = merge!(., inner2)
+        del(.message)
+      }
+    }
+
+    # Put final log line (if any) into .log
+    if exists(.message) && is_string(.message) {
+      .log = .message
+      del(.message)
+    }
+    '''
+
+    [transforms.k8s_logs_norm]
+    type   = "remap"
+    inputs = ["unwrap"]
+    source = '''
+    .etype    = "k8s.log"
+    .event_id = uuid_v4()
+
+    # event_time: from .timestamp or fallback to now()
+    .event_time = to_string(.timestamp) ?? to_string(now())
+
+    # subject: ns/name from K8s metadata (handle fallible to_string)
+    ns = to_string(.kubernetes.pod_namespace) ?? ""
+    name = to_string(.kubernetes.pod_name) ?? ""
+    .subject = { "kind": "Pod", "ns": ns, "name": name }
+
+    # message: log text (fallible-safe)
+    .message = to_string(.log) ?? ""
+
+    # severity: derive from optional glog-style prefix (I/W/E/F)
+    .severity = "INFO"
+    m, re_err = parse_regex(.message, r'^(?P<lvl>[IWEF])(?P<ts>\d{4}\s+\d{2}:\d{2}:\d{2}\.\d+)')
+    if re_err == null && m != null && exists(m.lvl) {
+      lvl = to_string(m.lvl)
+      if lvl == "W" { .severity = "WARNING" }
+      if lvl == "E" { .severity = "ERROR" }
+      if lvl == "F" { .severity = "FATAL" }
+    }
+    '''
+
+
+    # ---- send raw logs to Kafka ----
+    [sinks.raw_k8s_logs]
+    type              = "kafka"
+    inputs            = ["unwrap"]
+    bootstrap_servers = "${KAFKA_BOOTSTRAP}"
+    topic             = "raw.k8s.logs"
+    key_field         = "kubernetes.pod_uid"
+    encoding.codec    = "json"
+    compression       = "zstd"
+
+    [sinks.logs_normalized]
+    type              = "kafka"
+    inputs            = ["k8s_logs_norm"]
+    bootstrap_servers = "${KAFKA_BOOTSTRAP}"
+    topic             = "logs.normalized"
+    key_field         = "kubernetes.pod_uid"
+    encoding.codec    = "json"
+    compression       = "zstd"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vector-logs
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vector-logs
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vector-logs
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vector-logs
+subjects:
+  - kind: ServiceAccount
+    name: vector-logs
+    namespace: observability
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vector-logs
+  namespace: observability
+spec:
+  selector:
+    matchLabels: { app: vector-logs }
+  template:
+    metadata:
+      labels: { app: vector-logs }
+    spec:
+      serviceAccountName: vector-logs
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: vector
+          image: timberio/vector:0.39.0-alpine
+          args: ["-c", "/etc/vector/vector.toml"]
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: "kafka-external.observability.svc:29092"
+            - name: VECTOR_SELF_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { memory: "256Mi" }
+          volumeMounts:
+            # Needed because /var/log/containers/*.log are symlinks
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            # Docker runtime: symlinks -> /var/lib/docker/containers/...
+            - name: docker-containers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            # containerd runtime: symlinks -> /var/log/pods/...
+            - name: pods-logs
+              mountPath: /var/log/pods
+              readOnly: true
+            # Config
+            - name: cfg
+              mountPath: /etc/vector/vector.toml
+              subPath: vector.toml
+      volumes:
+        # ConfigMap for Vector
+        - name: cfg
+          configMap:
+            name: vector-logs-config
+        # Base /var/log (contains /var/log/containers symlinks)
+        - name: varlog
+          hostPath:
+            path: /var/log
+            type: Directory
+        # Docker target for symlinks
+        - name: docker-containers
+          hostPath:
+            path: /var/lib/docker/containers
+            type: DirectoryOrCreate
+        # containerd target for symlinks
+        - name: pods-logs
+          hostPath:
+            path: /var/log/pods
+            type: DirectoryOrCreate

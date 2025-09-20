@@ -1,0 +1,20 @@
+# prom-values.yaml
+alertmanager:
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: vector
+      group_by: [namespace]
+      group_wait: 15s
+      group_interval: 30s
+      repeat_interval: 1m
+      routes:
+        - matchers: ['alertname = "Watchdog"']
+          receiver: "null"
+    receivers:
+      - name: vector
+        webhook_configs:
+          - url: http://vector.observability.svc.cluster.local:9000
+            send_resolved: true
+      - name: "null"

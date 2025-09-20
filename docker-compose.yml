@@ -1,0 +1,104 @@
+services:
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    ports:
+      - "2181:2181"
+    restart: unless-stopped
+
+  kafka:
+    image: bitnami/kafka:3.7
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092" # for containers on the Docker network (kafka:9092)
+      - "29092:29092" # for K8s pods via host.minikube.internal:29092
+    environment:
+      # --- Listeners (both internal + external) ---
+      KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://host.minikube.internal:29092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # --- Zookeeper ---
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # --- Allow plaintext (Bitnami toggle) ---
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+
+      # --- Single-broker friendly defaults ---
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_CFG_NUM_PARTITIONS: "1"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_DELETE_TOPIC_ENABLE: "true"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Creates all topics once Kafka is up
+  kafka-init:
+    image: bitnami/kafka:3.7
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/init:ro
+    entrypoint: ["/bin/bash", "-lc"]
+    command: /init/kafka-init.sh
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "7777:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: prod
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_started
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.20
+    environment:
+      NEO4J_AUTH: neo4j/anuragvishwa
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_max__size: 1G
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4jdata:/data
+    restart: unless-stopped
+
+  graph-builder:
+    build: ./kg # or image: graph-builder:latest if you prebuilt
+    depends_on:
+      kafka:
+        condition: service_healthy
+      neo4j:
+        condition: service_started
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP: kg-builder
+      NEO4J_URI: neo4j://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASS: anuragvishwa
+      TOPIC_LOGS: logs.normalized
+    restart: unless-stopped
+
+volumes:
+  neo4jdata:
