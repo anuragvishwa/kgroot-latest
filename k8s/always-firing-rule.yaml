@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: test-alert-always-firing
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus-prometheus
+    release: prometheus
+spec:
+  groups:
+    - name: test-alerts
+      interval: 30s
+      rules:
+        - alert: TestAlertAlwaysFiring
+          expr: vector(1)
+          for: 0s
+          labels:
+            severity: info
+            namespace: default
+          annotations:
+            summary: "Test alert that always fires"
+            description: "This is a test alert to verify the alerting pipeline is working"

@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alerts-enricher
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alerts-enricher
+  template:
+    metadata:
+      labels:
+        app: alerts-enricher
+    spec:
+      containers:
+        - name: alerts-enricher
+          image: alerts-enricher:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KAFKA_BROKERS
+              value: "kafka.observability.svc:9092"
+            - name: KAFKA_GROUP
+              value: "alerts-enricher-alerts"
+            - name: INPUT_TOPIC
+              value: "events.normalized"
+            - name: OUTPUT_TOPIC
+              value: "alerts.enriched"
+            - name: STATE_RESOURCE_TOPIC
+              value: "state.k8s.resource"
+            - name: STATE_TOPOLOGY_TOPIC
+              value: "state.k8s.topology"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      restartPolicy: Always

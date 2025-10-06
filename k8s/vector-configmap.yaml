@@ -217,6 +217,15 @@ data:
     encoding.codec    = "json"
     compression       = "zstd"
 
+    [sinks.alerts_normalized]
+    type              = "kafka"
+    inputs            = ["prom_alerts_norm"]
+    bootstrap_servers = "${KAFKA_BOOTSTRAP}"
+    topic             = "alerts.normalized"
+    key_field         = "event_id"
+    encoding.codec    = "json"
+    compression       = "zstd"
+
     [sinks.raw_k8s_events]
     type              = "kafka"
     inputs            = ["k8s_events_norm"]

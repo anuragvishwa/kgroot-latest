@@ -61,16 +61,17 @@ spec:
             - name: CLUSTER_NAME
               value: "minikube"
             - name: KAFKA_BOOTSTRAP
-              value: "host.minikube.internal:29092" # or use kafka-external.svc (see step 3)
+              value: "kafka.observability.svc:9092"
             - name: TOPIC_STATE
               value: "state.k8s.resource"
             - name: TOPIC_TOPO
               value: "state.k8s.topology"
-            # ⬇️ add these for Prometheus targets
             - name: PROM_URL
-              value: "http://prometheus-kube-prometheus-stack-prometheus.monitoring.svc:9090"
-            - name: TOPIC_PROM_TARGETS # if your image supports it
+              value: "http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090"
+            - name: TOPIC_PROM_TARGETS
               value: "state.prom.targets"
+            - name: TOPIC_PROM_RULES
+              value: "state.prom.rules"
             # optional: scrape interval if the image supports it
             # - name: PROM_SCRAPE_INTERVAL
             #   value: "30s"

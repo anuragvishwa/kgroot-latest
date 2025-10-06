@@ -26,7 +26,7 @@ create_topic () {
   echo "[kafka-init] Ensuring topic: $NAME"
   $TOPICS --bootstrap-server "$BROKER" --create --if-not-exists \
     --topic "$NAME" --partitions "$PARTS" --replication-factor 1 \
-    --config "compression.type=zstd" \
+    --config "compression.type=gzip" \
     --config "retention.ms=$RET_MS" \
     "$@"
 }
@@ -35,8 +35,11 @@ create_topic () {
 create_topic raw.k8s.logs       6  $((3*DAY_MS))
 create_topic raw.k8s.events     3  $((14*DAY_MS))
 create_topic raw.prom.alerts    3  $MONTH_MS
+create_topic raw.events         3  $MONTH_MS
 create_topic events.normalized  6  $((60*DAY_MS))
 create_topic logs.normalized    6  $((14*DAY_MS))
+create_topic alerts.normalized  3  $MONTH_MS
+create_topic alerts.enriched    3  $MONTH_MS
 
 # ---------- Compacted state (latest truth) ----------
 COMPACT_RATIO="0.1"
