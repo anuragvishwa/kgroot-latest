@@ -90,10 +90,11 @@ spec:
               mountPath: /logs
           resources:
             requests:
-              cpu: "200m"
-              memory: "1Gi"
+              cpu: "300m"
+              memory: "1536Mi"
             limits:
-              memory: "2Gi"
+              cpu: "1000m"
+              memory: "3Gi"
           readinessProbe:
             tcpSocket:
               port: 7687

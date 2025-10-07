@@ -242,12 +242,21 @@ func (g *Graph) EnsureSchema(ctx context.Context) error {
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 	stmts := []string{
+		// Original constraints
 		`CREATE CONSTRAINT res_rid IF NOT EXISTS FOR (r:Resource) REQUIRE r.rid IS UNIQUE`,
 		`CREATE CONSTRAINT epi_eid IF NOT EXISTS FOR (e:Episodic) REQUIRE e.eid IS UNIQUE`,
 		`CREATE CONSTRAINT tgt_tid IF NOT EXISTS FOR (t:PromTarget) REQUIRE t.tid IS UNIQUE`,
 		`CREATE CONSTRAINT rule_rkey IF NOT EXISTS FOR (r:Rule) REQUIRE r.rkey IS UNIQUE`,
+
+		// ENHANCED: Indexes for RCA queries
 		`CREATE INDEX res_kind IF NOT EXISTS FOR (r:Resource) ON (r.kind)`,
 		`CREATE INDEX res_ns_name IF NOT EXISTS FOR (r:Resource) ON (r.ns, r.name)`,
+		`CREATE INDEX epi_severity IF NOT EXISTS FOR (e:Episodic) ON (e.severity)`,
+		`CREATE INDEX epi_event_time IF NOT EXISTS FOR (e:Episodic) ON (e.event_time)`,
+		`CREATE INDEX epi_reason IF NOT EXISTS FOR (e:Episodic) ON (e.reason)`,
+
+		// ENHANCED: Incident clustering support
+		`CREATE INDEX inc_resource IF NOT EXISTS FOR (i:Incident) ON (i.resource_id, i.window_start)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
@@ -622,6 +631,152 @@ MERGE (r)-[:SCOPES]->(s)`, map[string]any{"rkey": rkey, "rid": fmt.Sprintf("serv
 	return nil
 }
 
+/**************************************
+ * ENHANCED: Production RCA Features
+ **************************************/
+
+// Severity Escalation: WARNING→ERROR after repeats (Production Gap #5)
+func (g *Graph) EscalateSeverity(ctx context.Context, eid string, windowMin, threshold int) error {
+	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+	defer s.Close(ctx)
+
+	cy := `
+	MATCH (e:Episodic {eid:$eid})-[:ABOUT]->(r:Resource)
+	WHERE e.severity IN ['WARNING', 'ERROR']
+	MATCH (r)<-[:ABOUT]-(prev:Episodic)
+	WHERE prev.reason = e.reason
+	  AND prev.event_time >= e.event_time - duration({minutes:$window})
+	  AND prev.eid <> e.eid
+	WITH e, COUNT(prev) AS repeat_count
+	WHERE repeat_count >= $threshold
+	SET e.severity = CASE e.severity
+	                  WHEN 'WARNING' THEN 'ERROR'
+	                  WHEN 'ERROR' THEN 'FATAL'
+	                  ELSE e.severity END,
+	    e.escalated = true,
+	    e.repeat_count = repeat_count
+	RETURN e.eid, e.severity, repeat_count`
+
+	params := map[string]any{
+		"eid":       eid,
+		"window":    windowMin,
+		"threshold": threshold,
+	}
+
+	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
+		_, err := tx.Run(ctx, cy, params)
+		return err
+	})
+}
+
+// Incident Clustering: Group related episodic events
+func (g *Graph) ClusterIncident(ctx context.Context, eid string, windowMin int) error {
+	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+	defer s.Close(ctx)
+
+	// Find related events in time window with shared resources
+	cy := `
+	MATCH (e:Episodic {eid:$eid})-[:ABOUT]->(r:Resource)
+	WITH e, r
+	MATCH (r)<-[:ABOUT]-(related:Episodic)
+	WHERE related.event_time >= e.event_time - duration({minutes:$window})
+	  AND related.event_time <= e.event_time + duration({minutes:$window})
+	  AND related.eid <> e.eid
+	  AND (related.severity IN ['ERROR', 'FATAL'] OR e.severity IN ['ERROR', 'FATAL'])
+	WITH e, collect(DISTINCT related) AS related_events
+	WHERE size(related_events) >= 2
+
+	// Create or find incident node
+	MERGE (inc:Incident {
+		resource_id: head([(e)-[:ABOUT]->(r) | r.rid]),
+		window_start: datetime(e.event_time) - duration({minutes:$window})
+	})
+	SET inc.window_end = datetime(e.event_time) + duration({minutes:$window}),
+	    inc.event_count = size(related_events) + 1,
+	    inc.updated_at = datetime()
+
+	// Link events to incident
+	MERGE (e)-[:PART_OF]->(inc)
+	WITH inc, related_events
+	UNWIND related_events AS rel
+	MERGE (rel)-[:PART_OF]->(inc)
+	RETURN inc.resource_id, inc.event_count`
+
+	params := map[string]any{
+		"eid":    eid,
+		"window": windowMin,
+	}
+
+	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
+		_, err := tx.Run(ctx, cy, params)
+		return err
+	})
+}
+
+// Enhanced LinkRCA with confidence scoring (domain heuristics)
+func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int) error {
+	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+	defer s.Close(ctx)
+
+	cy := `
+	MATCH (e:Episodic {eid:$eid})-[:ABOUT]->(r:Resource)
+	WITH e, r
+	MATCH (c:Episodic)-[:ABOUT]->(u:Resource)
+	WHERE c.event_time <= e.event_time
+	  AND c.event_time >= e.event_time - duration({minutes:$mins})
+	  AND u <> r
+	OPTIONAL MATCH p = shortestPath( (u)-[:SELECTS|RUNS_ON|CONTROLS*1..3]-(r) )
+	WITH e, c, p, u, r WHERE p IS NOT NULL
+
+	// Calculate confidence score with domain heuristics
+	WITH e, c, p,
+	     // Base temporal score (closer in time = higher confidence)
+	     1.0 - (duration.between(c.event_time, e.event_time).milliseconds / (60000.0 * $mins)) AS temporal_score,
+	     // Graph distance (fewer hops = higher confidence)
+	     1.0 / (length(p) + 1.0) AS distance_score
+
+	// Domain heuristics for K8s failure patterns
+	WITH e, c, p, temporal_score, distance_score,
+	     CASE
+	       // High confidence: OOMKilled → CrashLoop
+	       WHEN c.reason CONTAINS 'OOMKilled' AND e.reason CONTAINS 'CrashLoop' THEN 0.95
+	       // High confidence: ImagePullBackOff → Pending
+	       WHEN c.reason CONTAINS 'ImagePull' AND e.reason CONTAINS 'FailedScheduling' THEN 0.90
+	       // High confidence: Node issues → Pod eviction
+	       WHEN c.reason CONTAINS 'NodeNotReady' AND e.reason CONTAINS 'Evicted' THEN 0.90
+	       // Medium confidence: Network errors → Service unavailable
+	       WHEN c.message =~ '(?i).*(connection refused|timeout).*' AND e.severity = 'ERROR' THEN 0.70
+	       // Medium confidence: Database errors → API errors
+	       WHEN c.message =~ '(?i).*(database|deadlock).*' AND e.message =~ '(?i).*(api|service).*' THEN 0.65
+	       // Low confidence: Generic errors
+	       WHEN c.severity = 'ERROR' AND e.severity = 'ERROR' THEN 0.50
+	       ELSE 0.40
+	     END AS domain_score
+
+	// Final confidence = weighted average
+	WITH e, c, p,
+	     (temporal_score * 0.3 + distance_score * 0.3 + domain_score * 0.4) AS confidence
+
+	MERGE (c)-[pc:POTENTIAL_CAUSE]->(e)
+	ON CREATE SET pc.hops = length(p),
+	              pc.created_at = datetime(),
+	              pc.confidence = confidence,
+	              pc.temporal_score = temporal_score,
+	              pc.distance_score = distance_score,
+	              pc.domain_score = domain_score
+	RETURN c.eid, e.eid, confidence ORDER BY confidence DESC`
+
+	params := map[string]any{
+		"eid":  eid,
+		"mins": windowMin,
+	}
+
+	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
+		_, err := tx.Run(ctx, cy, params)
+		return err
+	})
+}
+
 /***************
  * Consumers
  ***************/
@@ -702,6 +857,7 @@ func (h *handler) handleTopo(msg *sarama.ConsumerMessage) error {
 	return h.graph.UpsertEdge(context.Background(), rec)
 }
 
+// ENHANCED: Event handling with RCA, severity escalation, and incident clustering
 func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
 	if msg.Value == nil || len(msg.Value) == 0 {
 		return nil
@@ -719,7 +875,35 @@ func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
 	if ev.Reason != "" {
 		_ = h.linkRuleToEpisode(context.Background(), ev.Reason, ev.EventID)
 	}
-	return h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow)
+
+	// ENHANCED: Use LinkRCAWithScore for confidence-based causal links
+	if err := h.graph.LinkRCAWithScore(context.Background(), ev.EventID, h.rcaWindow); err != nil {
+		log.Printf("LinkRCAWithScore failed for %s: %v", ev.EventID, err)
+		// Fallback to simple LinkRCA if enhanced version fails
+		_ = h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow)
+	}
+
+	// ENHANCED: Check for severity escalation (WARNING→ERROR on repeats)
+	sevEscalationEnabled := getenv("SEVERITY_ESCALATION_ENABLED", "true") == "true"
+	if sevEscalationEnabled && (strings.ToUpper(ev.Severity) == "WARNING" || strings.ToUpper(ev.Severity) == "ERROR") {
+		windowMin := 5
+		threshold := 3
+		if v := getenv("SEVERITY_ESCALATION_WINDOW_MIN", ""); v != "" {
+			fmt.Sscanf(v, "%d", &windowMin)
+		}
+		if v := getenv("SEVERITY_ESCALATION_THRESHOLD", ""); v != "" {
+			fmt.Sscanf(v, "%d", &threshold)
+		}
+		_ = h.graph.EscalateSeverity(context.Background(), ev.EventID, windowMin, threshold)
+	}
+
+	// ENHANCED: Cluster related incidents (for ERROR/FATAL events)
+	incidentClusteringEnabled := getenv("INCIDENT_CLUSTERING_ENABLED", "true") == "true"
+	if incidentClusteringEnabled && (strings.ToUpper(ev.Severity) == "ERROR" || strings.ToUpper(ev.Severity) == "FATAL") {
+		_ = h.graph.ClusterIncident(context.Background(), ev.EventID, h.rcaWindow)
+	}
+
+	return nil
 }
 
 // NEW: logs.normalized → filtered Episodic events
@@ -784,7 +968,33 @@ func (h *handler) handleLog(msg *sarama.ConsumerMessage) error {
 	if err := h.graph.UpsertEpisodeAndLink(context.Background(), ev); err != nil {
 		return err
 	}
-	return h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow)
+
+	// ENHANCED: Use LinkRCAWithScore for confidence-based causal links
+	if err := h.graph.LinkRCAWithScore(context.Background(), ev.EventID, h.rcaWindow); err != nil {
+		// Fallback to simple LinkRCA if enhanced version fails
+		_ = h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow)
+	}
+
+	// ENHANCED: Severity escalation and incident clustering (same as handleEvent)
+	sevEscalationEnabled := getenv("SEVERITY_ESCALATION_ENABLED", "true") == "true"
+	if sevEscalationEnabled && (strings.ToUpper(ev.Severity) == "WARNING" || strings.ToUpper(ev.Severity) == "ERROR") {
+		windowMin := 5
+		threshold := 3
+		if v := getenv("SEVERITY_ESCALATION_WINDOW_MIN", ""); v != "" {
+			fmt.Sscanf(v, "%d", &windowMin)
+		}
+		if v := getenv("SEVERITY_ESCALATION_THRESHOLD", ""); v != "" {
+			fmt.Sscanf(v, "%d", &threshold)
+		}
+		_ = h.graph.EscalateSeverity(context.Background(), ev.EventID, windowMin, threshold)
+	}
+
+	incidentClusteringEnabled := getenv("INCIDENT_CLUSTERING_ENABLED", "true") == "true"
+	if incidentClusteringEnabled && (strings.ToUpper(ev.Severity) == "ERROR" || strings.ToUpper(ev.Severity) == "FATAL") {
+		_ = h.graph.ClusterIncident(context.Background(), ev.EventID, h.rcaWindow)
+	}
+
+	return nil
 }
 
 func truncate(s string, n int) string {
@@ -807,22 +1017,97 @@ func coalesceTime(ts string) string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
+// ENHANCED: 40+ error patterns for production accuracy (Production Gap #3)
 func isHighSignalLog(sev, msg string) bool {
 	sev = strings.ToUpper(sev)
 	m := strings.ToLower(msg)
+
+	// Always include ERROR and FATAL severity
 	if sev == "ERROR" || sev == "FATAL" {
 		return true
 	}
-	// well-known problem patterns
+
+	// Category 1: Pod/Container failures (K8s specific)
 	if strings.Contains(m, "crashloopbackoff") ||
 		strings.Contains(m, "back-off restarting failed container") ||
-		strings.Contains(m, "readiness probe failed") ||
-		strings.Contains(m, "liveness probe failed") ||
-		strings.Contains(m, "imagepullbackoff") || strings.Contains(m, "errimagepull") ||
 		strings.Contains(m, "oom killed") || strings.Contains(m, "oomkilled") ||
-		strings.Contains(m, "panic:") {
+		strings.Contains(m, "exit code") || strings.Contains(m, "exited with code") ||
+		strings.Contains(m, "container died") || strings.Contains(m, "pod evicted") {
 		return true
 	}
+
+	// Category 2: Image/Registry issues
+	if strings.Contains(m, "imagepullbackoff") || strings.Contains(m, "errimagepull") ||
+		strings.Contains(m, "failed to pull image") || strings.Contains(m, "image not found") ||
+		strings.Contains(m, "manifest unknown") || strings.Contains(m, "unauthorized") && strings.Contains(m, "registry") {
+		return true
+	}
+
+	// Category 3: Health check failures
+	if strings.Contains(m, "readiness probe failed") || strings.Contains(m, "liveness probe failed") ||
+		strings.Contains(m, "startup probe failed") || strings.Contains(m, "probe timeout") ||
+		strings.Contains(m, "health check failed") {
+		return true
+	}
+
+	// Category 4: Network/Connectivity errors
+	if strings.Contains(m, "connection refused") || strings.Contains(m, "connection reset") ||
+		strings.Contains(m, "connection timeout") || strings.Contains(m, "i/o timeout") ||
+		strings.Contains(m, "dial tcp") && strings.Contains(m, "timeout") ||
+		strings.Contains(m, "no route to host") || strings.Contains(m, "network unreachable") ||
+		strings.Contains(m, "dns lookup failed") || strings.Contains(m, "could not resolve") ||
+		strings.Contains(m, "unable to connect") || strings.Contains(m, "deadline exceeded") {
+		return true
+	}
+
+	// Category 5: Resource exhaustion
+	if strings.Contains(m, "out of memory") || strings.Contains(m, "disk full") ||
+		strings.Contains(m, "no space left") || strings.Contains(m, "too many open files") ||
+		strings.Contains(m, "resource exhausted") || strings.Contains(m, "quota exceeded") ||
+		strings.Contains(m, "cpu throttling") || strings.Contains(m, "eviction threshold") {
+		return true
+	}
+
+	// Category 6: Application panics/crashes
+	if strings.Contains(m, "panic:") || strings.Contains(m, "fatal error") ||
+		strings.Contains(m, "segfault") || strings.Contains(m, "segmentation fault") ||
+		strings.Contains(m, "core dumped") || strings.Contains(m, "stack overflow") ||
+		strings.Contains(m, "null pointer") || strings.Contains(m, "assertion failed") {
+		return true
+	}
+
+	// Category 7: Database errors
+	if strings.Contains(m, "database") && (
+		strings.Contains(m, "connection failed") || strings.Contains(m, "connection lost") ||
+		strings.Contains(m, "query timeout") || strings.Contains(m, "deadlock") ||
+		strings.Contains(m, "duplicate key") || strings.Contains(m, "constraint violation") ||
+		strings.Contains(m, "too many connections") || strings.Contains(m, "connection pool")) {
+		return true
+	}
+
+	// Category 8: Security/Certificate errors
+	if strings.Contains(m, "certificate") && (
+		strings.Contains(m, "expired") || strings.Contains(m, "invalid") ||
+		strings.Contains(m, "verify failed") || strings.Contains(m, "untrusted")) ||
+		strings.Contains(m, "tls handshake") && strings.Contains(m, "failed") ||
+		strings.Contains(m, "authentication failed") || strings.Contains(m, "permission denied") {
+		return true
+	}
+
+	// Category 9: Storage/Volume errors
+	if strings.Contains(m, "failed to mount") || strings.Contains(m, "volume") && strings.Contains(m, "failed") ||
+		strings.Contains(m, "persistentvolume") && strings.Contains(m, "error") ||
+		strings.Contains(m, "failed to attach") || strings.Contains(m, "io error") {
+		return true
+	}
+
+	// Category 10: API/HTTP errors (5xx)
+	if strings.Contains(m, "500") || strings.Contains(m, "502") || strings.Contains(m, "503") || strings.Contains(m, "504") ||
+		strings.Contains(m, "internal server error") || strings.Contains(m, "bad gateway") ||
+		strings.Contains(m, "service unavailable") || strings.Contains(m, "gateway timeout") {
+		return true
+	}
+
 	return false
 }
 

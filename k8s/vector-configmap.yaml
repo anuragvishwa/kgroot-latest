@@ -123,7 +123,7 @@ data:
     .subject = { "kind": kind, "ns": ns, "name": name }
     '''
 
-    # Normalize Kubernetes Events
+    # Normalize Kubernetes Events (ENHANCED: Reason-based severity mapping)
     [transforms.k8s_events_norm]
     type   = "remap"
     inputs = ["http_k8s"]
@@ -138,9 +138,47 @@ data:
     .event_id   = sha1(to_string(ts) + uid + rsn)
     .event_time = to_string(ts)
     .etype      = "k8s.event"
-    .severity   = upcase(to_string(evt.type) ?? "NORMAL")
     .reason     = rsn
     .message    = to_string(evt.message) ?? "n/a"
+
+    # ENHANCED: K8s event reason → severity mapping (Production Gap #1)
+    # Default severity from event type
+    .severity = upcase(to_string(evt.type) ?? "NORMAL")
+
+    msg_lower = downcase(.message)
+
+    # FATAL: Pod completely failed
+    if rsn == "OOMKilled" || rsn == "CrashLoopBackOff" || rsn == "Error" {
+      .severity = "FATAL"
+    } else if rsn == "Failed" && contains(msg_lower, "pod") {
+      .severity = "FATAL"
+    } else if rsn == "FailedScheduling" || rsn == "FailedMount" || rsn == "FailedAttachVolume" {
+      .severity = "ERROR"
+
+    # ERROR: Image/Registry issues
+    } else if rsn == "ImagePullBackOff" || rsn == "ErrImagePull" || rsn == "InvalidImageName" {
+      .severity = "ERROR"
+    } else if rsn == "ImageGCFailed" || rsn == "FailedCreatePodContainer" {
+      .severity = "ERROR"
+
+    # ERROR: Health check failures (liveness = critical)
+    } else if rsn == "Unhealthy" && contains(msg_lower, "liveness") {
+      .severity = "ERROR"
+    } else if rsn == "ProbeWarning" && contains(msg_lower, "liveness") {
+      .severity = "ERROR"
+
+    # ERROR: Node issues
+    } else if rsn == "NodeNotReady" || rsn == "NodePressure" {
+      .severity = "ERROR"
+    } else if rsn == "Evicted" || rsn == "OOMKilling" {
+      .severity = "ERROR"
+
+    # WARNING: Backoff/retry situations
+    } else if rsn == "BackOff" || rsn == "Unhealthy" || rsn == "ProbeWarning" {
+      .severity = "WARNING"
+    } else if rsn == "FailedKillPod" || rsn == "NetworkNotReady" {
+      .severity = "WARNING"
+    }
 
     subj  = evt.involvedObject
     skind = to_string(subj.kind)      ?? "Unknown"
@@ -356,6 +394,7 @@ data:
     }
     '''
 
+    # ENHANCED: Multi-format log parsing (JSON, glog, plain text)
     [transforms.k8s_logs_norm]
     type   = "remap"
     inputs = ["unwrap"]
@@ -374,14 +413,62 @@ data:
     # message: log text (fallible-safe)
     .message = to_string(.log) ?? ""
 
-    # severity: derive from optional glog-style prefix (I/W/E/F)
+    # ENHANCED: Multi-format severity detection (Production Gap #2)
     .severity = "INFO"
+    msg_lower = downcase(.message)
+
+    # 1. JSON structured logs (Python/Node.js/Java apps with structured logging)
+    if exists(.level) && is_string(.level) {
+      lvl, err = to_string(.level)
+      if err == null {
+        lvl = upcase(lvl)
+        if lvl == "DEBUG" || lvl == "TRACE" { .severity = "DEBUG" }
+        if lvl == "INFO" { .severity = "INFO" }
+        if lvl == "WARN" || lvl == "WARNING" { .severity = "WARNING" }
+        if lvl == "ERROR" || lvl == "CRITICAL" { .severity = "ERROR" }
+        if lvl == "FATAL" || lvl == "PANIC" || lvl == "EMERGENCY" { .severity = "FATAL" }
+      }
+    } else if exists(.severity) && is_string(.severity) {
+      # Some apps use .severity instead of .level
+      # Since we validated .severity is a string, to_string is infallible
+      lvl = upcase(to_string(.severity))
+      if lvl == "WARN" || lvl == "WARNING" { .severity = "WARNING" }
+      if lvl == "ERROR" || lvl == "CRITICAL" { .severity = "ERROR" }
+      if lvl == "FATAL" || lvl == "PANIC" { .severity = "FATAL" }
+    }
+
+    # 2. Glog-style prefix (Go/K8s apps: I0123 12:34:56.789 ...)
     m, re_err = parse_regex(.message, r'^(?P<lvl>[IWEF])(?P<ts>\d{4}\s+\d{2}:\d{2}:\d{2}\.\d+)')
     if re_err == null && m != null && exists(m.lvl) {
       lvl = to_string(m.lvl)
+      if lvl == "I" { .severity = "INFO" }
       if lvl == "W" { .severity = "WARNING" }
       if lvl == "E" { .severity = "ERROR" }
       if lvl == "F" { .severity = "FATAL" }
+    }
+
+    # 3. Plain text patterns (common in shell scripts, legacy apps)
+    if starts_with(msg_lower, "debug:") || starts_with(msg_lower, "[debug]") {
+      .severity = "DEBUG"
+    } else if starts_with(msg_lower, "info:") || starts_with(msg_lower, "[info]") {
+      .severity = "INFO"
+    } else if starts_with(msg_lower, "warn:") || starts_with(msg_lower, "warning:") || starts_with(msg_lower, "[warn]") {
+      .severity = "WARNING"
+    } else if starts_with(msg_lower, "error:") || starts_with(msg_lower, "[error]") || starts_with(msg_lower, "err:") {
+      .severity = "ERROR"
+    } else if starts_with(msg_lower, "fatal:") || starts_with(msg_lower, "[fatal]") || starts_with(msg_lower, "panic:") {
+      .severity = "FATAL"
+    }
+
+    # 4. Keyword-based escalation (catches errors without explicit prefixes)
+    if .severity == "INFO" {
+      if contains(msg_lower, "exception") || contains(msg_lower, "traceback") || contains(msg_lower, "stack trace") {
+        .severity = "ERROR"
+      } else if contains(msg_lower, "fatal error") || contains(msg_lower, "panic") || contains(msg_lower, "segfault") {
+        .severity = "FATAL"
+      } else if contains(msg_lower, "failed") || contains(msg_lower, "failure") || contains(msg_lower, "cannot") {
+        .severity = "WARNING"
+      }
     }
     '''
 
@@ -463,8 +550,8 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
           resources:
-            requests: { cpu: "50m", memory: "64Mi" }
-            limits: { memory: "256Mi" }
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
           volumeMounts:
             # Needed because /var/log/containers/*.log are symlinks
             - name: varlog
