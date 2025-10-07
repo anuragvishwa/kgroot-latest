@@ -1,0 +1,126 @@
+# Database (intentionally fails)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-db
+  namespace: default
+  labels:
+    test: rca-cascade
+    tier: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+        tier: database
+    spec:
+      containers:
+        - name: db
+          image: busybox
+          command: ["sh", "-c", "echo 'DB ERROR: Cannot bind to port'; exit 1"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-db
+  namespace: default
+spec:
+  selector:
+    app: db
+  ports:
+    - port: 5432
+
+---
+# API (tries to connect to DB)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-api
+  namespace: default
+  labels:
+    test: rca-cascade
+    tier: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+        tier: api
+    spec:
+      containers:
+        - name: api
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo "API starting..."
+              sleep 5
+              echo "ERROR: Failed to connect to database test-db:5432 - connection refused"
+              sleep 5
+              echo "FATAL: Database connection pool exhausted"
+              exit 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-api
+  namespace: default
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 8080
+
+---
+# Frontend (tries to call API)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-frontend
+  namespace: default
+  labels:
+    test: rca-cascade
+    tier: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        tier: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo "Frontend starting..."
+              sleep 10
+              echo "WARNING: API call to test-api:8080 timed out after 30s"
+              echo "ERROR: Cannot render page - upstream service unavailable"
+              exit 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-frontend
+  namespace: default
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80

@@ -22,19 +22,33 @@ spec:
         - name: alerts-enricher
           image: alerts-enricher:latest
           imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: kgroot-env
           env:
-            - name: KAFKA_BROKERS
-              value: "kafka.observability.svc:9092"
+            # Override specific values
             - name: KAFKA_GROUP
               value: "alerts-enricher-alerts"
             - name: INPUT_TOPIC
-              value: "events.normalized"
+              valueFrom:
+                configMapKeyRef:
+                  name: kgroot-env
+                  key: TOPIC_EVENTS_NORMALIZED
             - name: OUTPUT_TOPIC
-              value: "alerts.enriched"
+              valueFrom:
+                configMapKeyRef:
+                  name: kgroot-env
+                  key: TOPIC_ALERTS_ENRICHED
             - name: STATE_RESOURCE_TOPIC
-              value: "state.k8s.resource"
+              valueFrom:
+                configMapKeyRef:
+                  name: kgroot-env
+                  key: TOPIC_STATE_RESOURCE
             - name: STATE_TOPOLOGY_TOPIC
-              value: "state.k8s.topology"
+              valueFrom:
+                configMapKeyRef:
+                  name: kgroot-env
+                  key: TOPIC_STATE_TOPOLOGY
           resources:
             requests:
               cpu: "100m"

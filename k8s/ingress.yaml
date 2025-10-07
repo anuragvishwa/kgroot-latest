@@ -1,0 +1,97 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kgroot-ingress
+  namespace: observability
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Increase timeouts for Neo4j and Kafka UI
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    # Neo4j Browser
+    - host: neo4j.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: neo4j-external
+                port:
+                  number: 7474
+
+    # Kafka UI
+    - host: kafka-ui.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kafka-ui
+                port:
+                  number: 8080
+
+    # Prometheus (bonus)
+    - host: prometheus.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-kube-prometheus-prometheus
+                port:
+                  number: 9090
+
+    # Grafana (bonus)
+    - host: grafana.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-grafana
+                port:
+                  number: 80
+---
+# Alternative: If you want to use a single domain with paths
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kgroot-ingress-paths
+  namespace: observability
+  annotations:
+    # Strip the path prefix when forwarding to backend
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: kgroot.local
+      http:
+        paths:
+          # Neo4j at /neo4j
+          - path: /neo4j(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: neo4j-external
+                port:
+                  number: 7474
+
+          # Kafka UI at /kafka
+          - path: /kafka(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: kafka-ui
+                port:
+                  number: 8080

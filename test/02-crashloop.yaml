@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-crashloop
+  namespace: default
+  labels:
+    test: rca-crashloop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-crashloop
+  template:
+    metadata:
+      labels:
+        app: test-crashloop
+    spec:
+      containers:
+        - name: app
+          image: busybox
+          command: ["sh", "-c", "echo 'Starting...'; sleep 2; echo 'ERROR: Fatal panic!'; exit 1"]  # ← Crashes immediately
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-crashloop
+  namespace: default
+spec:
+  selector:
+    app: test-crashloop
+  ports:
+    - port: 80

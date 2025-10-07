@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-oom
+  namespace: default
+  labels:
+    test: rca-oom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-oom
+  template:
+    metadata:
+      labels:
+        app: test-oom
+    spec:
+      containers:
+        - name: memory-hog
+          image: polinux/stress
+          command: ["stress", "--vm", "1", "--vm-bytes", "512M", "--vm-hang", "0"]
+          resources:
+            limits:
+              memory: "128Mi"  # ← Much smaller than what app requests
+            requests:
+              memory: "64Mi"

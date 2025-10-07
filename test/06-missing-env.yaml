@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-missing-env
+  namespace: default
+  labels:
+    test: rca-config
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-config
+  template:
+    metadata:
+      labels:
+        app: test-config
+    spec:
+      containers:
+        - name: app
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo "App starting..."
+              if [ -z "$DATABASE_URL" ]; then
+                echo "FATAL: Required environment variable DATABASE_URL is not set"
+                exit 1
+              fi
+              echo "Running normally..."
+              sleep 3600
+          # ← DATABASE_URL not provided!

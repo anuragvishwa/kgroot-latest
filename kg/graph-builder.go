@@ -921,6 +921,18 @@ func (h *handler) handleCommand(msg *sarama.ConsumerMessage) error {
 func main() {
 	log.SetFlags(0)
 
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "healthcheck":
+			if err := runHealthcheck(); err != nil {
+				fmt.Printf("not ok: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("ok")
+			return
+		}
+	}
+
 	brokers := strings.Split(getenv("KAFKA_BROKERS", "localhost:9092"), ",")
 	group := getenv("KAFKA_GROUP", "kg-builder")
 
@@ -999,4 +1011,21 @@ func main() {
 		}
 	}
 	log.Printf("shutdown")
+}
+
+func runHealthcheck() error {
+	required := []string{
+		"KAFKA_BROKERS",
+		"NEO4J_URI",
+		"NEO4J_USER",
+		"NEO4J_PASS",
+	}
+
+	for _, key := range required {
+		if strings.TrimSpace(os.Getenv(key)) == "" {
+			return fmt.Errorf("%s not set", key)
+		}
+	}
+
+	return nil
 }

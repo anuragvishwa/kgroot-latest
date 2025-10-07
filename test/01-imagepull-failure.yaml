@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-imagepull
+  namespace: default
+  labels:
+    test: rca-imagepull
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-imagepull
+  template:
+    metadata:
+      labels:
+        app: test-imagepull
+    spec:
+      containers:
+        - name: app
+          image: nginx:this-tag-does-not-exist-12345  # ← Intentional error
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-imagepull
+  namespace: default
+spec:
+  selector:
+    app: test-imagepull
+  ports:
+    - port: 80
+      targetPort: 80

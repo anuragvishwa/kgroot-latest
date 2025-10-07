@@ -3,13 +3,15 @@ FROM golang:1.22 AS build
 WORKDIR /src
 
 # copy mod files first for better caching
-COPY go.mod go.sum ./
-RUN go mod download
+COPY go.mod ./
+
+# download dependencies and generate go.sum
+RUN go mod download && go mod tidy
 
 # now copy the actual source
 COPY . .
 
-# tidy modules for any newly added imports
+# ensure dependencies are up to date
 RUN go mod tidy
 
 # make output dir and build static linux binary

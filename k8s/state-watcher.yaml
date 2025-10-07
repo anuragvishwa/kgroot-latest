@@ -57,24 +57,21 @@ spec:
       containers:
         - name: state-watcher
           image: docker.io/anuragvishwa/state-watcher:0.4
+          envFrom:
+            - configMapRef:
+                name: kgroot-env
           env:
-            - name: CLUSTER_NAME
-              value: "minikube"
-            - name: KAFKA_BOOTSTRAP
-              value: "kafka.observability.svc:9092"
+            # Override specific values if needed
             - name: TOPIC_STATE
-              value: "state.k8s.resource"
+              valueFrom:
+                configMapKeyRef:
+                  name: kgroot-env
+                  key: TOPIC_STATE_RESOURCE
             - name: TOPIC_TOPO
-              value: "state.k8s.topology"
-            - name: PROM_URL
-              value: "http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090"
-            - name: TOPIC_PROM_TARGETS
-              value: "state.prom.targets"
-            - name: TOPIC_PROM_RULES
-              value: "state.prom.rules"
-            # optional: scrape interval if the image supports it
-            # - name: PROM_SCRAPE_INTERVAL
-            #   value: "30s"
+              valueFrom:
+                configMapKeyRef:
+                  name: kgroot-env
+                  key: TOPIC_STATE_TOPOLOGY
           resources:
             requests: { cpu: "50m", memory: "64Mi" }
             limits: { memory: "128Mi" }
