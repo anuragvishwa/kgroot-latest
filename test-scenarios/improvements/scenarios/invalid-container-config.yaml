@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: invalid-command-test
+  namespace: kg-testing
+  labels:
+    app: invalid-config-test
+    test-scenario: config-error
+spec:
+  containers:
+  - name: app
+    image: busybox:latest
+    command: ["/nonexistent/binary"]  # Binary doesn't exist
+    args: ["--invalid-flag"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: invalid-working-dir-test
+  namespace: kg-testing
+  labels:
+    app: invalid-config-test
+    test-scenario: config-error
+spec:
+  containers:
+  - name: app
+    image: busybox:latest
+    workingDir: /nonexistent/directory  # Directory doesn't exist
+    command: ["sh", "-c", "ls"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rapid-restart-test
+  namespace: kg-testing
+  labels:
+    app: rapid-restart-test
+    test-scenario: restart-loop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rapid-restart-test
+  template:
+    metadata:
+      labels:
+        app: rapid-restart-test
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: app
+        image: busybox:latest
+        command: ["sh", "-c", "exit 137"]  # Simulates SIGKILL
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"

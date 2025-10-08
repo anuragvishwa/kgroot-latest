@@ -1,0 +1,17 @@
+apiVersion: v2
+name: kg-rca-agent
+description: KG RCA Client Agent - Lightweight data collectors for client clusters
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - rca
+  - monitoring
+  - kubernetes
+  - observability
+maintainers:
+  - name: KG RCA Team
+    email: support@your-company.com
+home: https://kg-rca.your-company.com
+sources:
+  - https://github.com/your-company/kg-rca-agent

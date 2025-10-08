@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: stateful-test-service
+  namespace: kg-testing
+  labels:
+    app: stateful-test
+spec:
+  ports:
+  - port: 80
+    name: web
+  clusterIP: None
+  selector:
+    app: stateful-test
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: stateful-test
+  namespace: kg-testing
+  labels:
+    app: stateful-test
+    test-scenario: statefulset
+spec:
+  serviceName: "stateful-test-service"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stateful-test
+  template:
+    metadata:
+      labels:
+        app: stateful-test
+    spec:
+      containers:
+      - name: app
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "StatefulSet pod $(hostname) starting..."
+          # Simulate occasional failures
+          if [ "$(hostname)" = "stateful-test-1" ]; then
+            echo "ERROR: Simulated failure in stateful-test-1"
+            sleep 10
+            exit 1
+          fi
+          sleep 3600
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Mi  # Minimal storage for testing

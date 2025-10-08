@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: failed-mount-configmap
+  namespace: kg-testing
+  labels:
+    app: failed-mount-test
+    test-scenario: mount-error
+spec:
+  containers:
+  - name: app
+    image: busybox:latest
+    command: ["sh", "-c", "echo 'Waiting for config...' && sleep 3600"]
+    volumeMounts:
+    - name: config
+      mountPath: /config
+  volumes:
+  - name: config
+    configMap:
+      name: nonexistent-configmap  # This ConfigMap doesn't exist
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: failed-mount-pvc
+  namespace: kg-testing
+  labels:
+    app: failed-mount-test
+    test-scenario: mount-error
+spec:
+  containers:
+  - name: app
+    image: busybox:latest
+    command: ["sh", "-c", "echo 'Waiting for volume...' && sleep 3600"]
+    volumeMounts:
+    - name: data
+      mountPath: /data
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: nonexistent-pvc  # This PVC doesn't exist
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: failed-mount-secret
+  namespace: kg-testing
+  labels:
+    app: failed-mount-test
+    test-scenario: mount-error
+spec:
+  containers:
+  - name: app
+    image: busybox:latest
+    command: ["sh", "-c", "echo 'Waiting for secret...' && sleep 3600"]
+    env:
+    - name: SECRET_VALUE
+      valueFrom:
+        secretKeyRef:
+          name: nonexistent-secret  # This Secret doesn't exist
+          key: password

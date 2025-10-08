@@ -1,0 +1,51 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'kg-root'
+    environment: 'production'
+
+# Alerting configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Scrape configurations
+scrape_configs:
+  # Graph Builder Metrics
+  - job_name: 'graph-builder'
+    static_configs:
+      - targets: ['graph-builder:9090']
+        labels:
+          service: 'graph-builder'
+          component: 'knowledge-graph'
+
+  # Neo4j Metrics
+  - job_name: 'neo4j'
+    static_configs:
+      - targets: ['neo4j:2004']
+        labels:
+          service: 'neo4j'
+          component: 'database'
+
+  # KG API Metrics (if exposed)
+  - job_name: 'kg-api'
+    static_configs:
+      - targets: ['kg-api:8080']
+        labels:
+          service: 'kg-api'
+          component: 'api'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          component: 'monitoring'
+
+# Recording rules for common queries
+rule_files:
+  # - 'alerts.yml'
+  # - 'recording_rules.yml'

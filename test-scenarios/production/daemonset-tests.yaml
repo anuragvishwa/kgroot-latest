@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: daemonset-test
+  namespace: kg-testing
+  labels:
+    app: daemonset-test
+    test-scenario: daemonset
+spec:
+  selector:
+    matchLabels:
+      app: daemonset-test
+  template:
+    metadata:
+      labels:
+        app: daemonset-test
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: app
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "DaemonSet pod starting on node $(cat /host/nodename || echo 'unknown')..."
+          # Simulate monitoring/logging daemon behavior
+          counter=0
+          while true; do
+            counter=$((counter + 1))
+            echo "INFO: Health check #$counter - Node monitoring active"
+
+            # Simulate occasional issues
+            if [ $((counter % 10)) -eq 0 ]; then
+              echo "WARNING: High node resource usage detected"
+            fi
+
+            if [ $((counter % 25)) -eq 0 ]; then
+              echo "ERROR: Failed to collect metrics from node"
+            fi
+
+            sleep 30
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        volumeMounts:
+        - name: host-info
+          mountPath: /host
+          readOnly: true
+      volumes:
+      - name: host-info
+        hostPath:
+          path: /etc
+          type: Directory

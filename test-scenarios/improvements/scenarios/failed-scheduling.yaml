@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: failed-scheduling-test
+  namespace: kg-testing
+  labels:
+    app: failed-scheduling-test
+    test-scenario: scheduling-error
+spec:
+  # This pod will fail to schedule due to impossible node selector
+  nodeSelector:
+    nonexistent-label: "this-does-not-exist"
+  containers:
+  - name: app
+    image: busybox:latest
+    command: ["sh", "-c", "echo 'This will never run' && sleep 3600"]
+    resources:
+      requests:
+        memory: "16Mi"
+        cpu: "10m"
+      limits:
+        memory: "32Mi"
+        cpu: "50m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: failed-scheduling-resources
+  namespace: kg-testing
+  labels:
+    app: failed-scheduling-test
+    test-scenario: scheduling-error
+spec:
+  # This pod requests more resources than quota allows (but within LimitRange)
+  containers:
+  - name: app
+    image: busybox:latest
+    command: ["sh", "-c", "echo 'Needs too many resources' && sleep 3600"]
+    resources:
+      requests:
+        memory: "512Mi"  # Within limit but may exceed quota
+        cpu: "500m"
+      limits:
+        memory: "512Mi"  # Fixed: Within LimitRange max (512Mi)
+        cpu: "500m"      # Fixed: Within LimitRange max (500m)

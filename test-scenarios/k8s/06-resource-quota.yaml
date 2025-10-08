@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: kg-testing-quota
+  namespace: kg-testing
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: kg-testing-limits
+  namespace: kg-testing
+spec:
+  limits:
+  - max:
+      cpu: "500m"
+      memory: 512Mi
+    min:
+      cpu: "10m"
+      memory: 8Mi
+    type: Container

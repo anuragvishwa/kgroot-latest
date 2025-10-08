@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slow-startup-test
+  namespace: kg-testing
+  labels:
+    app: slow-startup-test
+    test-scenario: slow-startup
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slow-startup-test
+  template:
+    metadata:
+      labels:
+        app: slow-startup-test
+        test-scenario: slow-startup
+    spec:
+      containers:
+      - name: app
+        image: kg-test-apps:latest
+        imagePullPolicy: Never
+        command: ["python3", "-u", "/app/slow-startup.py"]
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 20  # Allow it to eventually become ready
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: slow-startup-test
+  namespace: kg-testing
+spec:
+  selector:
+    app: slow-startup-test
+  ports:
+  - port: 80
+    targetPort: 8080

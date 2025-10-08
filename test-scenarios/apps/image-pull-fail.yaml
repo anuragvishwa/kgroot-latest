@@ -1,0 +1,15 @@
+# This is a special case - just a YAML that references non-existent image
+# No app code needed - K8s will generate ImagePullBackOff events
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-pull-fail
+  namespace: kg-testing
+  labels:
+    app: image-pull-fail
+    test-scenario: image-error
+spec:
+  containers:
+  - name: app
+    image: nonexistent.registry.io/fake/image:v1.0.0
+    imagePullPolicy: Always

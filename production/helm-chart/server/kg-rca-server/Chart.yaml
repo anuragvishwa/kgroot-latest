@@ -1,0 +1,15 @@
+apiVersion: v2
+name: kg-rca-server
+description: KG RCA Server - Multi-tenant SaaS Platform (Your Infrastructure)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - rca
+  - saas
+  - multi-tenant
+  - neo4j
+  - kafka
+maintainers:
+  - name: KG RCA Team
+    email: ops@your-company.com

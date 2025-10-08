@@ -1,0 +1,379 @@
+# Default values for kg-rca-system
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+  # Namespace for all components
+  namespace: observability
+  # Image pull policy
+  imagePullPolicy: IfNotPresent
+  # Image registry
+  imageRegistry: docker.io
+
+# Neo4j Configuration
+neo4j:
+  enabled: true
+  image:
+    repository: neo4j
+    tag: "5.20"
+  auth:
+    # IMPORTANT: Change these in production!
+    username: neo4j
+    password: changeme
+    # Or use existing secret
+    existingSecret: ""
+    existingSecretPasswordKey: password
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 2000m
+      memory: 6Gi
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 20Gi
+  config:
+    heapSize: 2G
+    pageCacheSize: 1G
+    plugins: ["apoc"]
+    metricsEnabled: true
+  service:
+    type: ClusterIP
+    httpPort: 7474
+    boltPort: 7687
+    metricsPort: 2004
+
+# Kafka Configuration
+kafka:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: bitnami/kafka
+    tag: "3.7"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 1000m
+      memory: 4Gi
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+  config:
+    numPartitions: 3
+    replicationFactor: 1
+    retentionHours: 168  # 7 days
+    compressionType: gzip
+  service:
+    type: ClusterIP
+    port: 9092
+  topics:
+    - state.k8s.resource
+    - state.k8s.topology
+    - events.normalized
+    - logs.normalized
+    - alerts.enriched
+    - state.prom.targets
+    - state.prom.rules
+
+# Zookeeper (required for Kafka)
+zookeeper:
+  enabled: true
+  image:
+    repository: bitnami/zookeeper
+    tag: "3.9"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  persistence:
+    enabled: true
+    size: 5Gi
+
+# State Watcher (K8s resource tracking)
+stateWatcher:
+  enabled: true
+  image:
+    repository: your-registry/state-watcher
+    tag: latest
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  config:
+    cluster: production
+    prometheusScrapeInterval: 30s
+    prometheusUrl: http://prometheus:9090
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+    name: state-watcher
+
+# Vector (Log collection)
+vector:
+  enabled: true
+  image:
+    repository: timberio/vector
+    tag: "0.35.0-alpine"
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  config:
+    # Vector configuration will be mounted as ConfigMap
+    logSources:
+      - kubernetes_logs
+    transforms:
+      - parse_severity
+      - normalize
+    sinks:
+      - kafka
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+    name: vector
+
+# K8s Event Exporter
+eventExporter:
+  enabled: true
+  image:
+    repository: opsgenie/kubernetes-event-exporter
+    tag: "1.7"
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+    name: k8s-event-exporter
+
+# Graph Builder (Kafka -> Neo4j)
+graphBuilder:
+  enabled: true
+  image:
+    repository: your-registry/graph-builder
+    tag: latest
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  config:
+    kafkaGroup: kg-builder
+    rcaWindowMinutes: 15
+    severityEscalationEnabled: true
+    severityEscalationThreshold: 3
+    incidentClusteringEnabled: true
+    anomalyDetectionEnabled: true
+  metrics:
+    enabled: true
+    port: 9090
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+# Alerts Enricher
+alertsEnricher:
+  enabled: true
+  image:
+    repository: your-registry/alerts-enricher
+    tag: latest
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# KG API (REST API for RCA queries)
+kgApi:
+  enabled: true
+  image:
+    repository: your-registry/kg-api
+    tag: latest
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 300m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  service:
+    type: ClusterIP
+    port: 8080
+  ingress:
+    enabled: false
+    className: nginx
+    annotations: {}
+    hosts:
+      - host: kg-api.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+# Embedding Service (Vector search)
+embeddingService:
+  enabled: true
+  image:
+    repository: your-registry/embedding-service
+    tag: latest
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  service:
+    type: ClusterIP
+    port: 5000
+  model: sentence-transformers/all-MiniLM-L6-v2
+
+# Prometheus (Metrics collection)
+prometheus:
+  enabled: true
+  image:
+    repository: prom/prometheus
+    tag: latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 1000m
+      memory: 4Gi
+  persistence:
+    enabled: true
+    size: 50Gi
+  retention: 30d
+  service:
+    type: ClusterIP
+    port: 9090
+  scrapeInterval: 15s
+  evaluationInterval: 15s
+
+# Grafana (Dashboards)
+grafana:
+  enabled: true
+  image:
+    repository: grafana/grafana
+    tag: latest
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  persistence:
+    enabled: true
+    size: 5Gi
+  adminPassword: admin
+  service:
+    type: LoadBalancer
+    port: 3000
+  ingress:
+    enabled: false
+    className: nginx
+    hosts:
+      - host: grafana.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+
+# Alertmanager (Optional)
+alertmanager:
+  enabled: false
+  image:
+    repository: prom/alertmanager
+    tag: latest
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 9093
+
+# Kafka UI (Optional - for debugging)
+kafkaUi:
+  enabled: true
+  image:
+    repository: provectuslabs/kafka-ui
+    tag: latest
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 8080
+
+# Cleanup CronJob
+cleanup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retentionDays: 7
+  image:
+    repository: your-registry/graph-builder
+    tag: latest
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+
+# Security
+security:
+  podSecurityPolicy:
+    enabled: false
+  networkPolicy:
+    enabled: false
+  tls:
+    enabled: false
+    # If enabled, provide certificate secrets
+    neo4j:
+      secretName: neo4j-tls
+    kafka:
+      secretName: kafka-tls

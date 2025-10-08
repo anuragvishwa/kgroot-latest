@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: error-logger-test
+  namespace: kg-testing
+  labels:
+    app: error-logger-test
+    test-scenario: error-logs
+spec:
+  replicas: 2  # Multiple replicas to generate more logs
+  selector:
+    matchLabels:
+      app: error-logger-test
+  template:
+    metadata:
+      labels:
+        app: error-logger-test
+        test-scenario: error-logs
+    spec:
+      containers:
+      - name: app
+        image: kg-test-apps:latest
+        imagePullPolicy: Never
+        command: ["python3", "-u", "/app/error-logger.py"]
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: error-logger-test
+  namespace: kg-testing
+spec:
+  selector:
+    app: error-logger-test
+  ports:
+  - port: 80
+    targetPort: 8080

@@ -1,0 +1,270 @@
+# KG RCA Client Agent - Install this in CLIENT clusters
+# Lightweight agents that send data to YOUR server
+
+# REQUIRED: Client Configuration
+client:
+  # Get these from your KG RCA dashboard
+  id: "client-unique-id"              # Unique client identifier
+  apiKey: "your-api-key-here"         # Authentication key
+  serverUrl: "https://api.kg-rca.your-company.com"  # Your server URL
+
+  # Client metadata (for billing & analytics)
+  name: "Acme Corp Production"
+  environment: "production"
+  region: "us-east-1"
+
+  # Kafka endpoint (YOUR server)
+  kafka:
+    brokers: "kafka.kg-rca.your-company.com:9092"
+    # TLS configuration
+    tls:
+      enabled: true
+      ca: ""  # Provided by you
+      cert: ""
+      key: ""
+    # SASL authentication
+    sasl:
+      enabled: true
+      mechanism: PLAIN
+      username: "client-unique-id"
+      password: "client-kafka-password"
+
+# State Watcher - Monitors K8s resources
+stateWatcher:
+  enabled: true
+  image:
+    repository: your-registry.com/state-watcher
+    tag: v1.0.0
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  config:
+    # What to watch
+    watchResources:
+      - pods
+      - services
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+      - configmaps
+      - secrets
+      - ingresses
+      - nodes
+      - persistentvolumes
+      - persistentvolumeclaims
+    # Namespaces to monitor (empty = all)
+    watchNamespaces: []
+    # Exclude namespaces
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+    # Send to YOUR Kafka
+    kafka:
+      topics:
+        resource: "${client.id}.state.k8s.resource"
+        topology: "${client.id}.state.k8s.topology"
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+    name: kg-rca-state-watcher
+
+# Vector - Log collection
+vector:
+  enabled: true
+  image:
+    repository: timberio/vector
+    tag: "0.35.0-alpine"
+  replicaCount: 1  # DaemonSet mode available
+  daemonset:
+    enabled: true  # Run on every node
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  config:
+    # Log sources
+    sources:
+      kubernetes_logs:
+        type: kubernetes_logs
+        namespace_annotation_fields:
+          namespace_labels: ""
+        node_annotation_fields:
+          node_labels: ""
+    # Transforms
+    transforms:
+      # Parse severity
+      parse_severity:
+        type: remap
+        inputs: [kubernetes_logs]
+        source: |
+          .severity = if contains(string!(.message), "ERROR") {
+            "ERROR"
+          } else if contains(string!(.message), "FATAL") {
+            "FATAL"
+          } else if contains(string!(.message), "WARN") {
+            "WARNING"
+          } else {
+            "INFO"
+          }
+      # Normalize
+      normalize:
+        type: remap
+        inputs: [parse_severity]
+        source: |
+          .etype = "k8s.log"
+          .event_id = uuid_v4()
+          .event_time = now()
+          .subject.kind = "Pod"
+          .subject.ns = .kubernetes.pod_namespace
+          .subject.name = .kubernetes.pod_name
+          .subject.uid = .kubernetes.pod_uid
+    # Sink to YOUR Kafka
+    sinks:
+      kafka:
+        type: kafka
+        inputs: [normalize]
+        bootstrap_servers: "${client.kafka.brokers}"
+        topic: "${client.id}.logs.normalized"
+        compression: lz4
+        encoding:
+          codec: json
+        # TLS & Auth from client config
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+    name: kg-rca-vector
+
+# K8s Event Exporter - Exports K8s events
+eventExporter:
+  enabled: true
+  image:
+    repository: opsgenie/kubernetes-event-exporter
+    tag: "1.7"
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+  config:
+    # Event types to export
+    eventTypes:
+      - Warning
+      - Normal
+      - Error
+    # Send to YOUR Kafka
+    kafka:
+      topic: "${client.id}.events.normalized"
+      brokers: "${client.kafka.brokers}"
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+    name: kg-rca-event-exporter
+
+# Prometheus Remote Write (optional)
+# Sends metrics to YOUR Prometheus
+prometheusRemoteWrite:
+  enabled: false  # Enable if client has Prometheus
+  config:
+    # Client's existing Prometheus
+    prometheusUrl: "http://prometheus.monitoring.svc.cluster.local:9090"
+    # Remote write to YOUR server
+    remoteWrite:
+      - url: "https://prometheus.kg-rca.your-company.com/api/v1/write"
+        basicAuth:
+          username: "${client.id}"
+          password: "${client.apiKey}"
+        queueConfig:
+          capacity: 10000
+          maxShards: 50
+        # Only send KG-related metrics
+        writeRelabelConfigs:
+          - sourceLabels: [__name__]
+            regex: "(kg_.*|kube_.*|node_.*|container_.*)"
+            action: keep
+
+# Alertmanager Webhook (optional)
+# Sends alerts to YOUR server
+alertmanagerWebhook:
+  enabled: false  # Enable if client has Alertmanager
+  config:
+    # Client's existing Alertmanager
+    alertmanagerUrl: "http://alertmanager.monitoring.svc.cluster.local:9093"
+    # Webhook to YOUR server
+    webhook:
+      url: "https://api.kg-rca.your-company.com/api/v1/alerts/webhook"
+      httpConfig:
+        bearerToken: "${client.apiKey}"
+
+# Health Check Agent
+healthCheck:
+  enabled: true
+  image:
+    repository: your-registry.com/health-agent
+    tag: v1.0.0
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  config:
+    # Report to YOUR server every 5 minutes
+    reportInterval: 5m
+    endpoint: "${client.serverUrl}/api/v1/health/report"
+  schedule: "*/5 * * * *"  # CronJob
+
+# Network Policy (optional)
+networkPolicy:
+  enabled: true
+  # Allow outbound only to YOUR server
+  egress:
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9092  # Kafka
+        - protocol: TCP
+          port: 443   # HTTPS API
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: TCP
+          port: 53  # DNS
+
+# Resource Limits (total for all agents)
+resources:
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+
+# Priority Class (optional)
+priorityClassName: ""
+
+# Tolerations (optional)
+tolerations: []
+
+# Node Selector (optional)
+nodeSelector: {}
+
+# Affinity (optional)
+affinity: {}

@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-throttle-test
+  namespace: kg-testing
+  labels:
+    app: cpu-throttle-test
+    test-scenario: resource-pressure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cpu-throttle-test
+  template:
+    metadata:
+      labels:
+        app: cpu-throttle-test
+    spec:
+      containers:
+      - name: app
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Starting CPU stress test..."
+          # Infinite loop to consume CPU
+          while true; do :; done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"  # Will be CPU throttled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: disk-pressure-test
+  namespace: kg-testing
+  labels:
+    app: disk-pressure-test
+    test-scenario: resource-pressure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: disk-pressure-test
+  template:
+    metadata:
+      labels:
+        app: disk-pressure-test
+    spec:
+      containers:
+      - name: app
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Creating large files to simulate disk pressure..."
+          for i in $(seq 1 100); do
+            dd if=/dev/zero of=/tmp/testfile$i bs=1M count=10 2>&1
+            echo "Created file $i"
+            sleep 2
+          done
+          sleep 3600
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"

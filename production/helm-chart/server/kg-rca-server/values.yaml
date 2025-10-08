@@ -1,0 +1,448 @@
+# KG RCA Server - Your SaaS Infrastructure
+# Deploy this on YOUR servers to serve multiple clients
+
+global:
+  namespace: kg-rca-server
+  imageRegistry: your-registry.com
+  domain: kg-rca.your-company.com
+
+# Neo4j - Multi-tenant Knowledge Graph Database
+neo4j:
+  enabled: true
+  image:
+    repository: neo4j
+    tag: "5.20-enterprise"  # Enterprise for multi-tenancy
+  auth:
+    # CRITICAL: Use strong password
+    username: neo4j
+    password: CHANGE_THIS_STRONG_PASSWORD
+    existingSecret: ""
+  resources:
+    requests:
+      cpu: 8000m
+      memory: 32Gi
+    limits:
+      cpu: 16000m
+      memory: 64Gi
+  persistence:
+    enabled: true
+    storageClass: fast-ssd
+    size: 500Gi
+  replicaCount: 3  # HA cluster
+  config:
+    heapSize: 16G
+    pageCacheSize: 16G
+    plugins: ["apoc", "gds"]  # Graph Data Science
+    metricsEnabled: true
+    # Multi-tenancy via database isolation
+    databases:
+      - client1
+      - client2
+      - client3
+  service:
+    type: ClusterIP
+    httpPort: 7474
+    boltPort: 7687
+    metricsPort: 2004
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention: 30  # Keep 30 days
+
+# Kafka - Multi-tenant Event Streaming
+kafka:
+  enabled: true
+  replicaCount: 5  # High availability
+  image:
+    repository: bitnami/kafka
+    tag: "3.7"
+  resources:
+    requests:
+      cpu: 4000m
+      memory: 16Gi
+    limits:
+      cpu: 8000m
+      memory: 32Gi
+  persistence:
+    enabled: true
+    storageClass: fast-ssd
+    size: 1Ti
+  config:
+    numPartitions: 12
+    replicationFactor: 3
+    retentionHours: 168  # 7 days
+    compressionType: lz4
+    # Multi-tenancy via topic prefixes
+    # Topics: client1.events.normalized, client2.events.normalized
+    autoCreateTopicsEnable: true
+  service:
+    type: ClusterIP
+    port: 9092
+  monitoring:
+    enabled: true
+
+# Zookeeper (for Kafka)
+zookeeper:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: bitnami/zookeeper
+    tag: "3.9"
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+  persistence:
+    enabled: true
+    size: 50Gi
+
+# Graph Builder - Multi-tenant RCA Engine
+graphBuilder:
+  enabled: true
+  image:
+    repository: your-registry.com/graph-builder
+    tag: v1.0.0
+  replicaCount: 5
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+  config:
+    # Multi-tenant mode
+    multiTenant: true
+    # Process all client topics
+    kafkaTopicPattern: "*.events.normalized"
+  autoscaling:
+    enabled: true
+    minReplicas: 5
+    maxReplicas: 50
+    targetCPUUtilizationPercentage: 70
+
+# KG API - Multi-tenant REST API
+kgApi:
+  enabled: true
+  image:
+    repository: your-registry.com/kg-api
+    tag: v1.0.0
+  replicaCount: 10
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  config:
+    # Multi-tenant mode
+    multiTenant: true
+    # Authentication required
+    authEnabled: true
+    apiKeyRequired: true
+  service:
+    type: LoadBalancer
+    port: 443
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "arn:aws:acm:..."
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+    hosts:
+      - host: api.kg-rca.your-company.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: kg-api-tls
+        hosts:
+          - api.kg-rca.your-company.com
+
+# Embedding Service - Shared across clients
+embeddingService:
+  enabled: true
+  image:
+    repository: your-registry.com/embedding-service
+    tag: v1.0.0
+  replicaCount: 5
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 5
+    maxReplicas: 20
+  service:
+    type: ClusterIP
+    port: 5000
+
+# Alerts Enricher - Multi-tenant
+alertsEnricher:
+  enabled: true
+  image:
+    repository: your-registry.com/alerts-enricher
+    tag: v1.0.0
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  config:
+    multiTenant: true
+
+# Prometheus - Your monitoring
+prometheus:
+  enabled: true
+  image:
+    repository: prom/prometheus
+    tag: latest
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 8Gi
+  persistence:
+    enabled: true
+    size: 200Gi
+  retention: 90d
+  service:
+    type: ClusterIP
+    port: 9090
+  # Scrape all client clusters via federation
+  externalLabels:
+    environment: production
+    cluster: kg-rca-server
+
+# Grafana - Your dashboards
+grafana:
+  enabled: true
+  image:
+    repository: grafana/grafana
+    tag: latest
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  persistence:
+    enabled: true
+    size: 20Gi
+  adminPassword: CHANGE_THIS
+  service:
+    type: LoadBalancer
+    port: 443
+  ingress:
+    enabled: true
+    hosts:
+      - host: grafana.kg-rca.your-company.com
+  # Multi-tenant dashboards
+  dashboards:
+    - client-overview
+    - billing-metrics
+    - system-health
+
+# Kafka UI - Your monitoring
+kafkaUi:
+  enabled: true
+  image:
+    repository: provectuslabs/kafka-ui
+    tag: latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  service:
+    type: ClusterIP
+    port: 8080
+  ingress:
+    enabled: true
+    hosts:
+      - host: kafka-ui.kg-rca.your-company.com
+
+# Cleanup CronJob - Multi-tenant
+cleanup:
+  enabled: true
+  schedule: "0 3 * * *"  # Daily at 3 AM
+  retentionDays: 7
+  # Cleanup per client database
+  perClientCleanup: true
+  image:
+    repository: your-registry.com/graph-builder
+    tag: v1.0.0
+
+# Billing & Metering
+billing:
+  enabled: true
+  image:
+    repository: your-registry.com/billing-service
+    tag: v1.0.0
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  config:
+    # Track usage per client
+    metricsToTrack:
+      - events_ingested
+      - rca_queries
+      - storage_used
+      - api_calls
+    database:
+      type: postgresql
+      host: postgres.billing.svc.cluster.local
+      port: 5432
+      name: billing
+  service:
+    type: ClusterIP
+    port: 8080
+
+# API Gateway - Rate limiting, authentication
+apiGateway:
+  enabled: true
+  image:
+    repository: kong/kong-gateway
+    tag: latest
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  config:
+    # Per-client rate limits
+    rateLimiting:
+      free:
+        requests: 100
+        period: minute
+      basic:
+        requests: 1000
+        period: minute
+      pro:
+        requests: 10000
+        period: minute
+      enterprise:
+        requests: 100000
+        period: minute
+  plugins:
+    - key-auth  # API key authentication
+    - rate-limiting
+    - request-transformer
+    - response-transformer
+    - correlation-id
+
+# PostgreSQL - Client metadata & billing
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "15"
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 8Gi
+  persistence:
+    enabled: true
+    size: 100Gi
+  databases:
+    - name: clients
+      tables:
+        - clients
+        - api_keys
+        - subscriptions
+        - usage_metrics
+    - name: billing
+      tables:
+        - invoices
+        - payments
+        - usage_logs
+
+# Redis - Session management, rate limiting
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7"
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+  persistence:
+    enabled: true
+    size: 50Gi
+
+# Security
+security:
+  tls:
+    enabled: true
+    issuer: letsencrypt-prod
+  networkPolicies:
+    enabled: true
+  podSecurityPolicies:
+    enabled: true
+  secrets:
+    encryption:
+      enabled: true
+      kmsKeyId: "arn:aws:kms:..."
+
+# Backup & DR
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retention: 30
+  destinations:
+    - s3://your-backup-bucket/neo4j
+    - s3://your-backup-bucket/kafka
+    - s3://your-backup-bucket/postgres
+  encryption: true
+
+# Monitoring & Alerting
+alerting:
+  enabled: true
+  alertmanager:
+    enabled: true
+    config:
+      receivers:
+        - name: ops-team
+          slack_configs:
+            - api_url: https://hooks.slack.com/...
+              channel: '#kg-rca-alerts'
+        - name: pagerduty
+          pagerduty_configs:
+            - service_key: your-pagerduty-key
+  rules:
+    - alert: HighClientLag
+      expr: kg_kafka_consumer_lag{client=~".+"} > 10000
+    - alert: Neo4jDown
+      expr: up{job="neo4j"} == 0
+    - alert: HighErrorRate
+      expr: rate(kg_errors_total[5m]) > 100
+
+# Auto-scaling
+autoscaling:
+  enabled: true
+  components:
+    - graphBuilder
+    - kgApi
+    - embeddingService
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: kafka_consumer_lag
+        target:
+          type: AverageValue
+          averageValue: "5000"

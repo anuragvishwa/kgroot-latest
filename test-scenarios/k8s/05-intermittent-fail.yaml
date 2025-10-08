@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intermittent-fail-test
+  namespace: kg-testing
+  labels:
+    app: intermittent-fail-test
+    test-scenario: intermittent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: intermittent-fail-test
+  template:
+    metadata:
+      labels:
+        app: intermittent-fail-test
+        test-scenario: intermittent
+    spec:
+      containers:
+      - name: app
+        image: kg-test-apps:latest
+        imagePullPolicy: Never
+        command: ["python3", "-u", "/app/intermittent-fail.py"]
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intermittent-fail-test
+  namespace: kg-testing
+spec:
+  selector:
+    app: intermittent-fail-test
+  ports:
+  - port: 80
+    targetPort: 8080

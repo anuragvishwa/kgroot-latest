@@ -1,0 +1,21 @@
+apiVersion: v2
+name: kg-rca-system
+description: Complete Knowledge Graph RCA System for Kubernetes
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - rca
+  - root-cause-analysis
+  - kubernetes
+  - neo4j
+  - kafka
+  - observability
+  - knowledge-graph
+maintainers:
+  - name: KG RCA Team
+    email: support@example.com
+home: https://github.com/your-org/kg-rca-system
+sources:
+  - https://github.com/your-org/kg-rca-system
+icon: https://neo4j.com/wp-content/themes/neo4jweb/assets/images/neo4j-logo-2020.svg

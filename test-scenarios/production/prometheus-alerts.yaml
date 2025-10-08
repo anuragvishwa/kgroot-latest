@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: additional-prometheus-rules
+  namespace: observability
+data:
+  additional-rules.yml: |
+    groups:
+    # Application-level alerts
+    - name: kg-testing-apps
+      interval: 10s
+      rules:
+      - alert: HighErrorRate
+        expr: |
+          rate(container_errors_total{namespace="kg-testing"}[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: warning
+          namespace: kg-testing
+        annotations:
+          summary: "High error rate in {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} has error rate above 10%"
+
+      - alert: PodCrashLooping
+        expr: |
+          rate(kube_pod_container_status_restarts_total{namespace="kg-testing"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          namespace: kg-testing
+        annotations:
+          summary: "Pod crash looping in {{ $labels.namespace }}"
+          description: "Pod {{ $labels.pod }} is crash looping"
+
+      - alert: PodMemoryUsageHigh
+        expr: |
+          (container_memory_working_set_bytes{namespace="kg-testing"}
+          / container_spec_memory_limit_bytes{namespace="kg-testing"}) > 0.9
+        for: 2m
+        labels:
+          severity: warning
+          namespace: kg-testing
+        annotations:
+          summary: "High memory usage in {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit"
+
+      - alert: PodCPUThrottling
+        expr: |
+          rate(container_cpu_cfs_throttled_seconds_total{namespace="kg-testing"}[5m]) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          namespace: kg-testing
+        annotations:
+          summary: "CPU throttling in {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} is being CPU throttled"
+
+    # Infrastructure-level alerts
+    - name: kg-testing-infrastructure
+      interval: 30s
+      rules:
+      - alert: PodNotReady
+        expr: |
+          kube_pod_status_ready{namespace="kg-testing", condition="false"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          namespace: kg-testing
+        annotations:
+          summary: "Pod not ready in {{ $labels.namespace }}"
+          description: "Pod {{ $labels.pod }} has been not ready for 5 minutes"
+
+      - alert: DeploymentReplicasMismatch
+        expr: |
+          kube_deployment_spec_replicas{namespace="kg-testing"}
+          != kube_deployment_status_replicas_available{namespace="kg-testing"}
+        for: 10m
+        labels:
+          severity: warning
+          namespace: kg-testing
+        annotations:
+          summary: "Deployment replicas mismatch in {{ $labels.namespace }}"
+          description: "Deployment {{ $labels.deployment }} has mismatched replicas"
+
+      - alert: PersistentVolumeClaimPending
+        expr: |
+          kube_persistentvolumeclaim_status_phase{namespace="kg-testing", phase="Pending"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          namespace: kg-testing
+        annotations:
+          summary: "PVC pending in {{ $labels.namespace }}"
+          description: "PVC {{ $labels.persistentvolumeclaim }} is pending"
+
+      - alert: ContainerOOMKilled
+        expr: |
+          increase(kube_pod_container_status_terminated_reason{namespace="kg-testing", reason="OOMKilled"}[5m]) > 0
+        labels:
+          severity: critical
+          namespace: kg-testing
+        annotations:
+          summary: "Container OOM killed in {{ $labels.namespace }}"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} was OOM killed"
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kg-testing-alerts
+  namespace: observability
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: kg-testing.rules
+    interval: 15s
+    rules:
+    - alert: TestPodHighRestartRate
+      expr: rate(kube_pod_container_status_restarts_total{namespace="kg-testing"}[10m]) > 0.1
+      for: 2m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Test pod restarting frequently"
+        description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is restarting at {{ $value | humanize }} restarts/sec"

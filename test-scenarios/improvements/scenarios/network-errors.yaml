@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-error-test
+  namespace: kg-testing
+  labels:
+    app: network-error-test
+    test-scenario: network-error
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-error-test
+  template:
+    metadata:
+      labels:
+        app: network-error-test
+    spec:
+      containers:
+      - name: app
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Starting network error simulation..."
+          while true; do
+            echo "Attempting to connect to nonexistent service..."
+            wget -T 5 http://nonexistent-service.kg-testing.svc.cluster.local:80 2>&1 || true
+            echo "Connection failed, retrying in 10s..."
+            sleep 10
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: network-error-test
+  namespace: kg-testing
+spec:
+  selector:
+    app: network-error-test
+  ports:
+  - port: 80
+    targetPort: 8080

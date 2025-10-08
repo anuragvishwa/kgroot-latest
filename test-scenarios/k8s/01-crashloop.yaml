@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crashloop-test
+  namespace: kg-testing
+  labels:
+    app: crashloop-test
+    test-scenario: crashloop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crashloop-test
+  template:
+    metadata:
+      labels:
+        app: crashloop-test
+        test-scenario: crashloop
+    spec:
+      containers:
+      - name: app
+        image: kg-test-apps:latest
+        imagePullPolicy: Never  # Using local image
+        command: ["python3", "-u", "/app/crashloop.py"]
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crashloop-test
+  namespace: kg-testing
+spec:
+  selector:
+    app: crashloop-test
+  ports:
+  - port: 80
+    targetPort: 8080

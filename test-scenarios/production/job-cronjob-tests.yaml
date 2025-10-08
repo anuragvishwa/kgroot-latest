@@ -1,0 +1,103 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-success-test
+  namespace: kg-testing
+  labels:
+    test-scenario: job
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: worker
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "INFO: Job starting..."
+          echo "INFO: Processing batch items..."
+          for i in $(seq 1 10); do
+            echo "INFO: Processing item $i/10"
+            sleep 2
+          done
+          echo "INFO: Job completed successfully"
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+  backoffLimit: 3
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-failure-test
+  namespace: kg-testing
+  labels:
+    test-scenario: job
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: worker
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "INFO: Job starting..."
+          echo "ERROR: Failed to connect to database"
+          echo "ERROR: Job failed after 3 retries"
+          echo "FATAL: Exiting with error code"
+          exit 1
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+  backoffLimit: 2
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cronjob-test
+  namespace: kg-testing
+  labels:
+    test-scenario: cronjob
+spec:
+  schedule: "*/2 * * * *"  # Every 2 minutes
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: worker
+            image: busybox:latest
+            command:
+            - sh
+            - -c
+            - |
+              echo "INFO: CronJob starting at $(date)"
+              # Randomly succeed or fail
+              if [ $(($(date +%s) % 3)) -eq 0 ]; then
+                echo "ERROR: Scheduled job failed"
+                exit 1
+              fi
+              echo "INFO: Scheduled job completed"
+            resources:
+              requests:
+                memory: "32Mi"
+                cpu: "10m"
+              limits:
+                memory: "64Mi"
+                cpu: "50m"

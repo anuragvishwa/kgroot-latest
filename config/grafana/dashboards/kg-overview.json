@@ -1,0 +1,190 @@
+{
+  "dashboard": {
+    "title": "Knowledge Graph - RCA System Overview",
+    "tags": ["knowledge-graph", "rca", "kubernetes"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "type": "graph",
+        "title": "Message Processing Rate",
+        "targets": [
+          {
+            "expr": "rate(kg_messages_processed_total[5m])",
+            "legendFormat": "{{topic}} - {{status}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "type": "graph",
+        "title": "Neo4j Query Duration (p95)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(kg_neo4j_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{operation}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 8},
+        "type": "stat",
+        "title": "Total Resources",
+        "targets": [
+          {
+            "expr": "sum(kg_graph_nodes_total{node_type=\"Resource\"})",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 8},
+        "type": "stat",
+        "title": "Total Events",
+        "targets": [
+          {
+            "expr": "sum(kg_graph_nodes_total{node_type=\"Episodic\"})",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 8},
+        "type": "stat",
+        "title": "Active Incidents",
+        "targets": [
+          {
+            "expr": "sum(kg_graph_nodes_total{node_type=\"Incident\"})",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 8},
+        "type": "stat",
+        "title": "RCA Links Created (24h)",
+        "targets": [
+          {
+            "expr": "increase(kg_rca_links_created_total[24h])",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+        "type": "graph",
+        "title": "Severity Escalations",
+        "targets": [
+          {
+            "expr": "rate(kg_severity_escalations_total[5m])",
+            "legendFormat": "{{from_severity}} -> {{to_severity}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+        "type": "graph",
+        "title": "Anomalies Detected",
+        "targets": [
+          {
+            "expr": "rate(kg_anomalies_detected_total[5m])",
+            "legendFormat": "{{anomaly_type}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+        "type": "graph",
+        "title": "Kafka Consumer Lag",
+        "targets": [
+          {
+            "expr": "kg_kafka_consumer_lag",
+            "legendFormat": "{{topic}} - p{{partition}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+        "type": "graph",
+        "title": "Neo4j Connection Errors",
+        "targets": [
+          {
+            "expr": "rate(kg_neo4j_connection_errors_total[5m])",
+            "legendFormat": "Connection Errors",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 30},
+        "type": "stat",
+        "title": "Circuit Breaker State",
+        "targets": [
+          {
+            "expr": "kg_circuit_breaker_state{component=\"neo4j\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"value": 0, "text": "CLOSED"},
+              {"value": 1, "text": "OPEN"},
+              {"value": 2, "text": "HALF-OPEN"}
+            ],
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 1, "color": "red"},
+                {"value": 2, "color": "yellow"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 12,
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 30},
+        "type": "stat",
+        "title": "DLQ Messages (24h)",
+        "targets": [
+          {
+            "expr": "increase(kg_dlq_messages_total[24h])",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 30},
+        "type": "stat",
+        "title": "Incidents Clustered (24h)",
+        "targets": [
+          {
+            "expr": "increase(kg_incidents_clustered_total[24h])",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}
