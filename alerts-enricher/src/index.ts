@@ -1,4 +1,14 @@
-import { Kafka, Consumer, Producer, EachMessagePayload } from 'kafkajs';
+import { Kafka, Consumer, Producer, EachMessagePayload, CompressionTypes, CompressionCodecs } from 'kafkajs';
+const ZstdCodec = require('zstd-codec').ZstdCodec;
+
+// Register ZSTD codec
+ZstdCodec.run((zstd: any) => {
+  CompressionCodecs[CompressionTypes.ZSTD] = () => ({
+    compress: () => (value: Buffer) => Buffer.from(zstd.compress(value)),
+    decompress: () => (value: Buffer) => Buffer.from(zstd.decompress(value))
+  });
+  console.log('[enricher] ZSTD codec registered');
+});
 
 // Environment configuration
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
