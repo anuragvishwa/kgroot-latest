@@ -54,6 +54,21 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+data "aws_ami" "amazon_linux_2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
 # Security Group
 resource "aws_security_group" "kg_rca_server" {
   name_prefix = "kg-rca-server-"
@@ -119,7 +134,7 @@ data "aws_availability_zones" "available" {
 
 # EC2 Instance
 resource "aws_instance" "kg_rca_server" {
-  ami           = data.aws_ami.ubuntu.id
+  ami           = var.os_type == "ubuntu" ? data.aws_ami.ubuntu.id : data.aws_ami.amazon_linux_2023.id
   instance_type = var.instance_type
   key_name      = var.ssh_key_name
 
@@ -166,7 +181,12 @@ output "public_ip" {
 }
 
 output "ssh_command" {
-  value = "ssh ubuntu@${aws_eip.kg_rca_server.public_ip}"
+  value = var.os_type == "ubuntu" ? "ssh ubuntu@${aws_eip.kg_rca_server.public_ip}" : "ssh ec2-user@${aws_eip.kg_rca_server.public_ip}"
+}
+
+output "ssh_user" {
+  description = "SSH username for the instance"
+  value       = var.os_type == "ubuntu" ? "ubuntu" : "ec2-user"
 }
 
 output "next_steps" {
@@ -174,9 +194,11 @@ output "next_steps" {
 
     ✅ Instance created successfully!
 
+    OS Type: ${var.os_type == "ubuntu" ? "Ubuntu 22.04" : "Amazon Linux 2023"}
+
     Next steps:
     1. Update DNS: Point ${var.domain} to ${aws_eip.kg_rca_server.public_ip}
-    2. SSH to server: ssh ubuntu@${aws_eip.kg_rca_server.public_ip}
+    2. SSH to server: ${var.os_type == "ubuntu" ? "ssh ubuntu@" : "ssh ec2-user@"}${aws_eip.kg_rca_server.public_ip}
     3. Clone repo and run setup script
     4. Configure .env file
     5. Start services with docker-compose up -d

@@ -10,10 +10,26 @@ if [[ $EUID -eq 0 ]]; then
    exit 1
 fi
 
-# Update system
+# Detect OS
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+    echo "📋 Detected OS: $PRETTY_NAME"
+else
+    echo "❌ Cannot detect OS"
+    exit 1
+fi
+
+# Update system based on OS
 echo "📦 Updating system packages..."
-sudo apt-get update
-sudo apt-get upgrade -y
+if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
+    sudo apt-get update
+    sudo apt-get upgrade -y
+elif [[ "$OS" == "amzn" ]] || [[ "$OS" == "rhel" ]] || [[ "$OS" == "centos" ]]; then
+    sudo dnf update -y || sudo yum update -y
+else
+    echo "⚠️  Unknown OS, attempting to continue..."
+fi
 
 # Install Docker
 echo "🐳 Installing Docker..."
@@ -37,30 +53,66 @@ else
     echo "✅ Docker Compose already installed"
 fi
 
-# Install other utilities
+# Install other utilities based on OS
 echo "🔧 Installing utilities..."
-sudo apt-get install -y \
-    nginx \
-    certbot \
-    python3-certbot-nginx \
-    git \
-    curl \
-    wget \
-    htop \
-    jq
+if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
+    sudo apt-get install -y \
+        nginx \
+        certbot \
+        python3-certbot-nginx \
+        git \
+        curl \
+        wget \
+        htop \
+        jq
+elif [[ "$OS" == "amzn" ]] || [[ "$OS" == "rhel" ]] || [[ "$OS" == "centos" ]]; then
+    # Amazon Linux 2023 / RHEL / CentOS
+    sudo dnf install -y \
+        nginx \
+        git \
+        curl \
+        wget \
+        htop \
+        jq \
+        python3-pip || sudo yum install -y \
+        nginx \
+        git \
+        curl \
+        wget \
+        htop \
+        jq \
+        python3-pip
+
+    # Install certbot via pip for Amazon Linux
+    sudo python3 -m pip install certbot certbot-nginx
+fi
+
+# Determine home directory (ec2-user for Amazon Linux, ubuntu for Ubuntu)
+if [[ "$OS" == "amzn" ]]; then
+    HOME_USER="ec2-user"
+elif [[ "$OS" == "ubuntu" ]]; then
+    HOME_USER="ubuntu"
+else
+    HOME_USER="$USER"
+fi
 
 # Create project directory
 echo "📁 Setting up project directory..."
-PROJECT_DIR="/home/$USER/kg-rca"
+PROJECT_DIR="/home/$HOME_USER/kg-rca"
 if [ ! -d "$PROJECT_DIR" ]; then
     mkdir -p $PROJECT_DIR
 fi
 
-# Copy files to project directory
-echo "📋 Copying configuration files..."
-cp docker-compose.yml $PROJECT_DIR/
-cp -r config $PROJECT_DIR/ 2>/dev/null || echo "Config directory will be created"
-cp -r scripts $PROJECT_DIR/ 2>/dev/null || echo "Scripts directory will be created"
+# If we're already in server_mini directory, copy from current dir
+CURRENT_DIR=$(pwd)
+if [[ "$CURRENT_DIR" == *"server_mini"* ]]; then
+    echo "📋 Copying configuration files from current directory..."
+    cp -f docker-compose.yml $PROJECT_DIR/ 2>/dev/null || true
+    cp -rf config $PROJECT_DIR/ 2>/dev/null || true
+    cp -rf scripts $PROJECT_DIR/ 2>/dev/null || true
+else
+    echo "📋 Configuration files will be created in project directory..."
+fi
 
 cd $PROJECT_DIR
 

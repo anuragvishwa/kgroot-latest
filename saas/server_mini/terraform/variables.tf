@@ -15,6 +15,17 @@ variable "instance_type" {
   }
 }
 
+variable "os_type" {
+  description = "Operating system type: ubuntu or amazon-linux"
+  type        = string
+  default     = "ubuntu"
+
+  validation {
+    condition     = contains(["ubuntu", "amazon-linux"], var.os_type)
+    error_message = "OS type must be either ubuntu or amazon-linux"
+  }
+}
+
 variable "domain" {
   description = "Domain name for the API (e.g., api.yourdomain.com)"
   type        = string
