@@ -6,6 +6,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 // Anomaly detection for improved RCA accuracy
@@ -224,7 +226,7 @@ func (ad *AnomalyDetector) StartPeriodicReporting(interval time.Duration) chan s
 // DetectMemoryLeaks analyzes OOM patterns across resources
 func (ad *AnomalyDetector) DetectMemoryLeaks(ctx context.Context, graph *Graph) error {
 	// Query Neo4j for OOM patterns
-	s := graph.drv.NewSession(ctx, nil)
+	s := graph.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
 	defer s.Close(ctx)
 
 	cy := `
@@ -263,7 +265,7 @@ func (ad *AnomalyDetector) DetectMemoryLeaks(ctx context.Context, graph *Graph) 
 
 // DetectCascadingFailures identifies cascading failure patterns
 func (ad *AnomalyDetector) DetectCascadingFailures(ctx context.Context, graph *Graph) error {
-	s := graph.drv.NewSession(ctx, nil)
+	s := graph.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
 	defer s.Close(ctx)
 
 	cy := `

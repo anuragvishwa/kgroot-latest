@@ -1,0 +1,122 @@
+{{- if .Values.eventExporter.enabled -}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-event-exporter-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+    component: event-exporter
+data:
+  config.yaml: |
+    logLevel: info
+    logFormat: json
+    route:
+      routes:
+        - match:
+            - receiver: "kafka"
+    receivers:
+      - name: "kafka"
+        kafka:
+          brokers:
+            - {{ .Values.client.kafka.brokers | quote }}
+          topic: {{ printf "%s.events.normalized" .Values.client.id | quote }}
+          {{- if .Values.client.kafka.sasl.enabled }}
+          sasl:
+            enabled: true
+            mechanism: {{ .Values.client.kafka.sasl.mechanism | quote }}
+            username: "${KAFKA_SASL_USERNAME}"
+            password: "${KAFKA_SASL_PASSWORD}"
+          {{- end }}
+          compression: gzip
+          requireAcks: 1
+          maxRetry: 3
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-event-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+    component: event-exporter
+spec:
+  replicas: {{ .Values.eventExporter.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "kg-rca-agent.selectorLabels" . | nindent 6 }}
+      component: event-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "kg-rca-agent.selectorLabels" . | nindent 8 }}
+        component: event-exporter
+      annotations:
+        checksum/config: {{ toYaml .Values.eventExporter.config | sha256sum }}
+        checksum/secret: {{ toYaml .Values.client.kafka.sasl | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: event-exporter
+          image: "{{ .Values.eventExporter.image.repository }}:{{ .Values.eventExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.eventExporter.image.pullPolicy }}
+          args:
+            - -conf=/config/config.yaml
+          env:
+            - name: CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: CLIENT_ID
+            {{- if .Values.client.kafka.sasl.enabled }}
+            # Kafka SASL Credentials from Secret
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-secrets
+                  key: kafka-sasl-username
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-secrets
+                  key: kafka-sasl-password
+            {{- end }}
+          resources:
+            {{- toYaml .Values.eventExporter.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 2112
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 2112
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kg-rca-agent.fullname" . }}-event-exporter-config
+      restartPolicy: Always
+{{- end }}

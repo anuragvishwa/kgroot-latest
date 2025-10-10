@@ -1,0 +1,20 @@
+{{- if .Values.kgApi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-kg-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: kg-api
+spec:
+  type: {{ .Values.kgApi.service.type }}
+  ports:
+  - port: {{ .Values.kgApi.service.port }}
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: kg-api
+    {{- include "kg-rca-server.selectorLabels" . | nindent 4 }}
+{{- end }}

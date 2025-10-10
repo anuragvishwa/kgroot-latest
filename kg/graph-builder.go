@@ -715,6 +715,7 @@ func (g *Graph) ClusterIncident(ctx context.Context, eid string, windowMin int) 
 
 // Enhanced LinkRCA with confidence scoring (domain heuristics)
 func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int) error {
+	startTime := time.Now()
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 
@@ -738,6 +739,11 @@ func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int)
 	// Domain heuristics for K8s failure patterns
 	WITH e, c, p, temporal_score, distance_score,
 	     CASE
+		// === NEW: Patterns from YOUR actual data ===
+			WHEN c.reason = 'KubePodCrashLooping' AND e.reason = 'KubePodNotReady' THEN 0.85
+			WHEN c.reason = 'NodeClockNotSynchronising' AND e.reason = 'PrometheusMissingRuleEvaluations' THEN 0.85
+			WHEN c.reason = 'KubePodNotReady' AND e.reason = 'KubePodCrashLooping' THEN 0.80
+			WHEN c.reason = 'KubePodCrashLooping' AND e.reason = 'KubePodCrashLooping' THEN 0.75
 	       // High confidence: OOMKilled → CrashLoop
 	       WHEN c.reason CONTAINS 'OOMKilled' AND e.reason CONTAINS 'CrashLoop' THEN 0.95
 	       // High confidence: ImagePullBackOff → Pending
@@ -754,27 +760,72 @@ func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int)
 	     END AS domain_score
 
 	// Final confidence = weighted average
-	WITH e, c, p,
+	WITH e, c, p, temporal_score, distance_score, domain_score,
 	     (temporal_score * 0.3 + distance_score * 0.3 + domain_score * 0.4) AS confidence
 
 	MERGE (c)-[pc:POTENTIAL_CAUSE]->(e)
 	ON CREATE SET pc.hops = length(p),
-	              pc.created_at = datetime(),
-	              pc.confidence = confidence,
-	              pc.temporal_score = temporal_score,
-	              pc.distance_score = distance_score,
-	              pc.domain_score = domain_score
-	RETURN c.eid, e.eid, confidence ORDER BY confidence DESC`
+	              pc.created_at = datetime()
+	SET pc.confidence = confidence,
+	    pc.temporal_score = temporal_score,
+	    pc.distance_score = distance_score,
+	    pc.domain_score = domain_score,
+	    pc.updated_at = datetime()
+	RETURN c.eid, e.eid, confidence, temporal_score, distance_score, domain_score ORDER BY confidence DESC`
 
 	params := map[string]any{
 		"eid":  eid,
 		"mins": windowMin,
 	}
 
-	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
-		_, err := tx.Run(ctx, cy, params)
-		return err
+	var linksCreated int
+	err := writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
+		result, err := tx.Run(ctx, cy, params)
+		if err != nil {
+			return err
+		}
+
+		// Track confidence scores for metrics
+		for result.Next(ctx) {
+			linksCreated++
+			record := result.Record()
+
+			if conf, ok := record.Get("confidence"); ok {
+				if confVal, ok := conf.(float64); ok {
+					rcaConfidenceScoreDistribution.WithLabelValues("final").Observe(confVal)
+				}
+			}
+			if temp, ok := record.Get("temporal_score"); ok {
+				if tempVal, ok := temp.(float64); ok {
+					rcaConfidenceScoreDistribution.WithLabelValues("temporal").Observe(tempVal)
+				}
+			}
+			if dist, ok := record.Get("distance_score"); ok {
+				if distVal, ok := dist.(float64); ok {
+					rcaConfidenceScoreDistribution.WithLabelValues("distance").Observe(distVal)
+				}
+			}
+			if dom, ok := record.Get("domain_score"); ok {
+				if domVal, ok := dom.(float64); ok {
+					rcaConfidenceScoreDistribution.WithLabelValues("domain").Observe(domVal)
+				}
+			}
+		}
+
+		return result.Err()
 	})
+
+	// Track metrics
+	duration := time.Since(startTime)
+	trackNeo4jOperation("link_rca_with_score", duration, err)
+
+	if err == nil && linksCreated > 0 {
+		for i := 0; i < linksCreated; i++ {
+			trackRCALink()
+		}
+	}
+
+	return err
 }
 
 /***************
@@ -859,6 +910,8 @@ func (h *handler) handleTopo(msg *sarama.ConsumerMessage) error {
 
 // ENHANCED: Event handling with RCA, severity escalation, and incident clustering
 func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
+	startTime := time.Now()
+
 	if msg.Value == nil || len(msg.Value) == 0 {
 		return nil
 	}
@@ -877,11 +930,17 @@ func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
 	}
 
 	// ENHANCED: Use LinkRCAWithScore for confidence-based causal links
+	rcaStart := time.Now()
 	if err := h.graph.LinkRCAWithScore(context.Background(), ev.EventID, h.rcaWindow); err != nil {
 		log.Printf("LinkRCAWithScore failed for %s: %v", ev.EventID, err)
 		// Fallback to simple LinkRCA if enhanced version fails
-		_ = h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow)
+		if fallbackErr := h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow); fallbackErr == nil {
+			// Track that we used fallback (NULL confidence)
+			rcaNullConfidenceLinks.Inc()
+		}
 	}
+	rcaDuration := time.Since(rcaStart)
+	trackSLACompliance("rca_compute", rcaDuration, defaultSLAThresholds)
 
 	// ENHANCED: Check for severity escalation (WARNING→ERROR on repeats)
 	sevEscalationEnabled := getenv("SEVERITY_ESCALATION_ENABLED", "true") == "true"
@@ -902,6 +961,11 @@ func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
 	if incidentClusteringEnabled && (strings.ToUpper(ev.Severity) == "ERROR" || strings.ToUpper(ev.Severity) == "FATAL") {
 		_ = h.graph.ClusterIncident(context.Background(), ev.EventID, h.rcaWindow)
 	}
+
+	// Track end-to-end latency and SLA compliance
+	totalDuration := time.Since(startTime)
+	trackEndToEndLatency(h.evtTopic, totalDuration)
+	trackSLACompliance("message_processing", totalDuration, defaultSLAThresholds)
 
 	return nil
 }
@@ -972,7 +1036,10 @@ func (h *handler) handleLog(msg *sarama.ConsumerMessage) error {
 	// ENHANCED: Use LinkRCAWithScore for confidence-based causal links
 	if err := h.graph.LinkRCAWithScore(context.Background(), ev.EventID, h.rcaWindow); err != nil {
 		// Fallback to simple LinkRCA if enhanced version fails
-		_ = h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow)
+		if fallbackErr := h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow); fallbackErr == nil {
+			// Track that we used fallback (NULL confidence)
+			rcaNullConfidenceLinks.Inc()
+		}
 	}
 
 	// ENHANCED: Severity escalation and incident clustering (same as handleEvent)

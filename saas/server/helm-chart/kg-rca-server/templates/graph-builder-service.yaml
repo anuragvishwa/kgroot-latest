@@ -1,0 +1,24 @@
+{{- if .Values.graphBuilder.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-graph-builder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: graph-builder
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: {{ .Values.graphBuilder.service.type }}
+  ports:
+  - port: {{ .Values.graphBuilder.service.port }}
+    targetPort: 9090
+    protocol: TCP
+    name: {{ .Values.graphBuilder.service.name }}
+  selector:
+    app: graph-builder
+    {{- include "kg-rca-server.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,234 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    volumes:
+      - zookeeper-data:/bitnami/zookeeper
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  kafka:
+    image: bitnami/kafka:3.7
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_CFG_NUM_PARTITIONS: "3"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_CFG_LOG_RETENTION_HOURS: ${KAFKA_RETENTION_HOURS:-168}
+      KAFKA_CFG_LOG_SEGMENT_BYTES: "1073741824"
+      KAFKA_CFG_COMPRESSION_TYPE: "gzip"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    volumes:
+      - kafka-data:/bitnami/kafka
+
+  kafka-init:
+    image: bitnami/kafka:3.7
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/init:ro
+    entrypoint: ["/bin/bash", "-lc"]
+    command: /init/kafka-init.sh
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "7777:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: prod
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.20
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-changeme}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_max__size: 4G
+      NEO4J_server_memory_heap_initial__size: 2G
+      NEO4J_server_memory_pagecache_size: 2G
+      NEO4J_db_memory_transaction_total_max: 4G
+      NEO4J_db_memory_transaction_max: 2G
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+      - neo4j-metrics:/metrics
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-changeme}", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  graph-builder:
+    image: ${DOCKER_REGISTRY:-}kg-graph-builder:${VERSION:-latest}
+    build:
+      context: ../../kg
+      dockerfile: Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP: kg-builder
+      NEO4J_URI: neo4j://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASS: ${NEO4J_PASSWORD:-changeme}
+      TOPIC_LOGS: logs.normalized
+      RCA_WINDOW_MIN: "15"
+      SEVERITY_ESCALATION_ENABLED: "true"
+      SEVERITY_ESCALATION_WINDOW_MIN: "5"
+      SEVERITY_ESCALATION_THRESHOLD: "3"
+      INCIDENT_CLUSTERING_ENABLED: "true"
+      ANOMALY_DETECTION_ENABLED: "true"
+      METRICS_PORT: "9090"
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  alerts-enricher:
+    image: ${DOCKER_REGISTRY:-}kg-alerts-enricher:${VERSION:-latest}
+    build:
+      context: ../../alerts-enricher
+      dockerfile: Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP: alerts-enricher
+      INPUT_TOPIC: events.normalized
+      OUTPUT_TOPIC: alerts.enriched
+      STATE_RESOURCE_TOPIC: state.k8s.resource
+      STATE_TOPOLOGY_TOPIC: state.k8s.topology
+    restart: unless-stopped
+
+  kg-api:
+    image: ${DOCKER_REGISTRY:-}kg-api:${VERSION:-latest}
+    build:
+      context: ../../kg-api
+      dockerfile: Dockerfile
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      NEO4J_URI: neo4j://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASS: ${NEO4J_PASSWORD:-changeme}
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - graph-builder
+      - neo4j
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_PLUGINS_PREINSTALL: "kniepdennis-neo4j-datasource@1.3.2"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - neo4j
+    restart: unless-stopped
+
+  # Nginx reverse proxy for SSL termination and routing
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/ssl:/etc/nginx/ssl:ro
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    depends_on:
+      - kg-api
+    restart: unless-stopped
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+  # Certbot for SSL certificate management
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+volumes:
+  zookeeper-data:
+  kafka-data:
+  neo4j-data:
+  neo4j-logs:
+  neo4j-metrics:
+  prometheus-data:
+  grafana-data:
+  certbot-conf:
+  certbot-www:

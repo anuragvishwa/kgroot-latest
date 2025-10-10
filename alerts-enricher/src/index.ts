@@ -1,4 +1,5 @@
 import { Kafka, Consumer, Producer, EachMessagePayload, CompressionTypes, CompressionCodecs } from 'kafkajs';
+import { AlertGrouper, Alert } from './alert-grouper';
 const ZstdCodec = require('zstd-codec').ZstdCodec;
 
 // Register ZSTD codec
@@ -17,10 +18,20 @@ const INPUT_TOPIC = process.env.INPUT_TOPIC || 'events.normalized';
 const OUTPUT_TOPIC = process.env.OUTPUT_TOPIC || 'alerts.enriched';
 const STATE_RESOURCE_TOPIC = process.env.STATE_RESOURCE_TOPIC || 'state.k8s.resource';
 const STATE_TOPOLOGY_TOPIC = process.env.STATE_TOPOLOGY_TOPIC || 'state.k8s.topology';
+const GROUPING_WINDOW_MIN = parseInt(process.env.GROUPING_WINDOW_MIN || '5', 10);
+const ENABLE_GROUPING = process.env.ENABLE_GROUPING !== 'false'; // default: enabled
 
 // In-memory state caches (compacted topic data)
 const resourceState = new Map<string, any>();
 const topologyState = new Map<string, any>();
+
+// Initialize alert grouper
+const alertGrouper = new AlertGrouper(GROUPING_WINDOW_MIN);
+
+// Stats tracking
+let processedCount = 0;
+let groupedCount = 0;
+let deduplicatedCount = 0;
 
 interface NormalizedEvent {
   etype: string;
@@ -44,6 +55,11 @@ interface EnrichedAlert extends NormalizedEvent {
     related_resources?: any[];
     topology?: any[];
     enriched_at: string;
+    // Grouping information
+    group_id?: string;
+    group_count?: number;
+    is_grouped?: boolean;
+    similar_alerts?: number;
   };
 }
 
@@ -170,8 +186,36 @@ async function processMessage(payload: EachMessagePayload): Promise<void> {
 
   // Process events from INPUT_TOPIC
   if (topic === INPUT_TOPIC) {
+    processedCount++;
+
     const enriched = await enrichAlert(data);
     if (enriched) {
+      // Apply alert grouping if enabled
+      if (ENABLE_GROUPING) {
+        const groupResult = alertGrouper.processAlert(enriched as Alert);
+
+        if (groupResult) {
+          if (groupResult.action === 'duplicate') {
+            deduplicatedCount++;
+            console.log(
+              `[enricher] Deduplicated alert: ${enriched.reason} (group: ${groupResult.group.group_id})`
+            );
+            // Don't send duplicate alerts
+            return;
+          }
+
+          if (groupResult.action === 'grouped') {
+            groupedCount++;
+          }
+
+          // Add grouping metadata
+          enriched.enrichment.group_id = groupResult.group.group_id;
+          enriched.enrichment.group_count = groupResult.group.count;
+          enriched.enrichment.is_grouped = groupResult.action === 'grouped';
+          enriched.enrichment.similar_alerts = groupResult.group.count - 1;
+        }
+      }
+
       await producer.send({
         topic: OUTPUT_TOPIC,
         messages: [
@@ -181,11 +225,28 @@ async function processMessage(payload: EachMessagePayload): Promise<void> {
           },
         ],
       });
+
       console.log(
-        `[enricher] Enriched alert: ${enriched.reason} for ${buildResourceKey(enriched.subject!)}`
+        `[enricher] Enriched alert: ${enriched.reason} for ${buildResourceKey(enriched.subject!)} ` +
+        `(grouped: ${enriched.enrichment.is_grouped}, count: ${enriched.enrichment.group_count})`
       );
     }
   }
+}
+
+// Print stats periodically
+function printStats() {
+  const grouperStats = alertGrouper.getStats();
+  console.log('\n=== Alert Enricher Stats ===');
+  console.log(`Processed: ${processedCount} alerts`);
+  console.log(`Grouped: ${groupedCount} alerts`);
+  console.log(`Deduplicated: ${deduplicatedCount} alerts`);
+  console.log(`Active Groups: ${grouperStats.active_groups}`);
+  console.log(`Total Groups: ${grouperStats.total_groups}`);
+  console.log(`Deduplication Rate: ${grouperStats.deduplication_rate}`);
+  console.log(`Resource State Cache: ${resourceState.size} entries`);
+  console.log(`Topology State Cache: ${topologyState.size} entries`);
+  console.log('===========================\n');
 }
 
 // Main function
@@ -195,6 +256,8 @@ async function main() {
   console.log(`[enricher] Consumer group: ${KAFKA_GROUP}`);
   console.log(`[enricher] Input topic: ${INPUT_TOPIC}`);
   console.log(`[enricher] Output topic: ${OUTPUT_TOPIC}`);
+  console.log(`[enricher] Alert grouping: ${ENABLE_GROUPING ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`[enricher] Grouping window: ${GROUPING_WINDOW_MIN} minutes`);
 
   await consumer.connect();
   await producer.connect();
@@ -206,10 +269,15 @@ async function main() {
 
   console.log('[enricher] Subscribed to topics, consuming messages...');
 
+  // Print stats every 5 minutes
+  setInterval(printStats, 5 * 60 * 1000);
+
   await consumer.run({
     eachMessage: processMessage,
   });
 }
+
+
 
 // Graceful shutdown
 async function shutdown() {

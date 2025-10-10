@@ -1,0 +1,39 @@
+{{- if and .Values.kgApi.enabled .Values.kgApi.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-kg-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: kg-api
+  annotations:
+    {{- toYaml .Values.kgApi.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.kgApi.ingress.className }}
+  {{- if .Values.kgApi.ingress.tls }}
+  tls:
+    {{- range .Values.kgApi.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.kgApi.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "kg-rca-server.fullname" $ }}-kg-api
+                port:
+                  number: {{ $.Values.kgApi.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

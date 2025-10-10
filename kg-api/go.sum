@@ -1,6 +1,6 @@
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
 github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
-github.com/neo4j/neo4j-go-driver/v5 v5.20.0 h1:1YIr3htyT9jbJg5r8VdxqKQYxgJFHI0RlCAz6/j0kac=
+github.com/neo4j/neo4j-go-driver/v5 v5.20.0 h1:XnoAi6g6XRkX+wxWa3yM+f7PT2VUkGQfBGtGuJL4fsM=
 github.com/neo4j/neo4j-go-driver/v5 v5.20.0/go.mod h1:Vff8OwT7QpLm7L2yYr85XNWe9Rbqlbeb9asNXJTHO4k=
 github.com/rs/cors v1.10.1 h1:L0uuZVXIKlI1SShY2nhFfo44TYvDPQ1w4oFkUJNfhyo=
 github.com/rs/cors v1.10.1/go.mod h1:XyqrcTp5zjWr1wsJ8PIRZssZ8b/WMcMf71DJnit4EMU=

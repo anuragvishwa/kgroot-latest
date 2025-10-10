@@ -1,0 +1,15 @@
+{
+  "anthropic_version": "bedrock-2023-05-31",
+  "max_tokens": 100,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Write a short Python script that prints the first 10 Fibonacci numbers."
+        }
+      ]
+    }
+  ]
+}

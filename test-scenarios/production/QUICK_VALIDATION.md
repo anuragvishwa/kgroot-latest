@@ -3,6 +3,7 @@
 ## ✅ Run These 5 Queries to Validate Production Readiness
 
 ### 1. Overall Health Check
+
 ```cypher
 // Production Readiness Score
 MATCH (cause)-[r:POTENTIAL_CAUSE]->(symptom)
@@ -21,6 +22,7 @@ RETURN
 ```
 
 **Expected**:
+
 - total_events: 3,000+
 - event_types: 30+
 - rca_links: 20,000+
@@ -29,27 +31,37 @@ RETURN
 ---
 
 ### 2. RCA Quality Check
+
 ```cypher
 // Verify causes happen BEFORE symptoms
+// Bucket each pair as Valid/Invalid
 MATCH (cause:Episodic)-[:POTENTIAL_CAUSE]->(symptom:Episodic)
 WITH
-  duration.inSeconds(
-    datetime(cause.event_time),
-    datetime(symptom.event_time)
-  ).seconds as gap
-WITH
-  CASE WHEN gap > 0 THEN 'Valid' ELSE 'Invalid' END as quality,
-  count(*) as count
-RETURN quality, count, round(count * 100.0 / sum(count) OVER(), 2) as percent;
+  CASE
+    WHEN duration.inSeconds(datetime(cause.event_time), datetime(symptom.event_time)).seconds > 0
+    THEN 'Valid' ELSE 'Invalid'
+  END AS quality
+WITH quality, count(*) AS count
+// Compute total in a separate aggregation and then unwind
+WITH sum(count) AS total, collect({quality: quality, count: count}) AS rows
+UNWIND rows AS r
+RETURN
+  r.quality AS quality,
+  r.count   AS count,
+  round(r.count * 100.0 / total, 2) AS percent
+ORDER BY percent DESC;
+
 ```
 
 **Expected**:
+
 - Valid: >95%
 - Invalid: <5%
 
 ---
 
 ### 3. Sample RCA Chains
+
 ```cypher
 // View actual RCA examples
 MATCH (cause:Episodic)-[r:POTENTIAL_CAUSE]->(symptom:Episodic)
@@ -70,6 +82,7 @@ LIMIT 10;
 ```
 
 **Expected patterns**:
+
 - TargetDown → KubePodNotReady
 - KubePodCrashLooping → LOG_ERROR
 - NodeClockNotSynchronising → KubePodNotReady
@@ -78,6 +91,7 @@ LIMIT 10;
 ---
 
 ### 4. Event Coverage Check
+
 ```cypher
 // Verify diverse event types
 MATCH (e:Episodic)
@@ -89,6 +103,7 @@ ORDER BY total_events DESC;
 ```
 
 **Expected**:
+
 - k8s.log: 1,500+ events, 2-3 types (LOG_ERROR, LOG_FATAL)
 - prom.alert: 1,000+ events, 10-15 types
 - k8s.event: 200+ events, 20-25 types
@@ -96,6 +111,7 @@ ORDER BY total_events DESC;
 ---
 
 ### 5. Resource Coverage Check
+
 ```cypher
 // Verify all resource types
 MATCH (r:Resource)
@@ -106,6 +122,7 @@ ORDER BY count DESC;
 ```
 
 **Expected types**:
+
 - Pod, Deployment, ReplicaSet, Service
 - StatefulSet, DaemonSet, Job, CronJob
 - PersistentVolumeClaim, HorizontalPodAutoscaler
@@ -145,26 +162,28 @@ RETURN
 
 **Based on your test run:**
 
-| Metric | Your Result | Target | Status |
-|--------|-------------|--------|--------|
-| Total Events | 3,347 | 1,000+ | ✅ 335% |
-| Event Types | 38 | 15+ | ✅ 253% |
-| RCA Links | 29,451 | 20,000+ | ✅ 147% |
-| Prometheus Alerts | 13 types | 5+ | ✅ 260% |
-| Resource Types | 14 | 6+ | ✅ 233% |
-| **Decision** | | | **✅ PRODUCTION READY** |
+| Metric            | Your Result | Target  | Status                  |
+| ----------------- | ----------- | ------- | ----------------------- |
+| Total Events      | 3,347       | 1,000+  | ✅ 335%                 |
+| Event Types       | 38          | 15+     | ✅ 253%                 |
+| RCA Links         | 29,451      | 20,000+ | ✅ 147%                 |
+| Prometheus Alerts | 13 types    | 5+      | ✅ 260%                 |
+| Resource Types    | 14          | 6+      | ✅ 233%                 |
+| **Decision**      |             |         | **✅ PRODUCTION READY** |
 
 ---
 
 ## 🎯 Next Steps
 
 ### If Production Ready (Your Status)
+
 1. ✅ System validated
 2. ✅ Deploy to staging (optional but recommended)
 3. ✅ Monitor for 1 week
 4. ✅ Deploy to production
 
 ### If Issues Found
+
 1. Check graph-builder logs: `docker logs kgroot_latest-graph-builder-1 --tail=100`
 2. Check consumer lag: See scripts/check-kafka-topics.sh
 3. Verify Neo4j indexes: `SHOW INDEXES;`

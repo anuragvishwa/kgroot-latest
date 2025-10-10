@@ -1,0 +1,84 @@
+{{- if .Values.kafka.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-kafka
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: kafka
+    component: messaging
+spec:
+  serviceName: {{ include "kg-rca-server.fullname" . }}-kafka-headless
+  replicas: {{ .Values.kafka.replicaCount }}
+  selector:
+    matchLabels:
+      app: kafka
+      {{- include "kg-rca-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: kafka
+        {{- include "kg-rca-server.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: kafka
+        image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+        imagePullPolicy: {{ .Values.kafka.image.pullPolicy }}
+        ports:
+        - containerPort: 9092
+          name: kafka
+        - containerPort: 9093
+          name: kafka-internal
+        env:
+        - name: KAFKA_CFG_ZOOKEEPER_CONNECT
+          value: "{{ include "kg-rca-server.fullname" . }}-zookeeper:2181"
+        - name: KAFKA_CFG_LISTENERS
+          value: "PLAINTEXT://:9092,INTERNAL://:9093"
+        - name: KAFKA_CFG_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://$(POD_NAME).{{ include "kg-rca-server.fullname" . }}-kafka-headless:9092,INTERNAL://$(POD_NAME).{{ include "kg-rca-server.fullname" . }}-kafka-headless:9093"
+        - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT"
+        - name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
+          value: "INTERNAL"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ALLOW_PLAINTEXT_LISTENER
+          value: "yes"
+        {{- range $key, $value := .Values.kafka.config }}
+        - name: KAFKA_CFG_{{ $key | upper | replace "." "_" }}
+          value: {{ $value | quote }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.kafka.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /bitnami/kafka
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - kafka-topics.sh --bootstrap-server localhost:9092 --list
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - kafka-topics.sh --bootstrap-server localhost:9092 --list
+          initialDelaySeconds: 30
+          periodSeconds: 10
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.kafka.persistence.storageClassName }}
+      resources:
+        requests:
+          storage: {{ .Values.kafka.persistence.size }}
+{{- end }}

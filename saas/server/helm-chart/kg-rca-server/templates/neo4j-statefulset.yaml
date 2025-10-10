@@ -1,0 +1,95 @@
+{{- if .Values.neo4j.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-neo4j
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: neo4j
+    component: database
+spec:
+  serviceName: {{ include "kg-rca-server.fullname" . }}-neo4j-headless
+  replicas: {{ .Values.neo4j.replicaCount }}
+  selector:
+    matchLabels:
+      app: neo4j
+      {{- include "kg-rca-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: neo4j
+        {{- include "kg-rca-server.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: neo4j
+        image: "{{ .Values.neo4j.image.repository }}:{{ .Values.neo4j.image.tag }}"
+        imagePullPolicy: {{ .Values.neo4j.image.pullPolicy }}
+        ports:
+        - containerPort: 7474
+          name: http
+        - containerPort: 7687
+          name: bolt
+        env:
+        - name: NEO4J_AUTH
+          value: "{{ .Values.neo4j.auth.username }}/$(NEO4J_PASSWORD)"
+        - name: NEO4J_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kg-rca-server.fullname" . }}-secrets
+              key: neo4j-password
+        - name: NEO4J_PLUGINS
+          value: '["apoc"]'
+        {{- range $key, $value := .Values.neo4j.config }}
+        - name: NEO4J_{{ $key | replace "." "_" }}
+          value: {{ $value | quote }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.neo4j.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: logs
+          mountPath: /logs
+        livenessProbe:
+          exec:
+            command:
+            - cypher-shell
+            - -u
+            - {{ .Values.neo4j.auth.username }}
+            - -p
+            - $(NEO4J_PASSWORD)
+            - "RETURN 1"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - cypher-shell
+            - -u
+            - {{ .Values.neo4j.auth.username }}
+            - -p
+            - $(NEO4J_PASSWORD)
+            - "RETURN 1"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.neo4j.persistence.storageClassName }}
+      resources:
+        requests:
+          storage: {{ .Values.neo4j.persistence.size }}
+  - metadata:
+      name: logs
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.neo4j.persistence.storageClassName }}
+      resources:
+        requests:
+          storage: 10Gi
+{{- end }}

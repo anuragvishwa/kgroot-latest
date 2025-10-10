@@ -1,0 +1,64 @@
+{{- if .Values.kgApi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-kg-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: kg-api
+    component: api
+spec:
+  replicas: {{ .Values.kgApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: kg-api
+      {{- include "kg-rca-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: kg-api
+        {{- include "kg-rca-server.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: kg-api
+        image: "{{ .Values.kgApi.image.repository }}:{{ .Values.kgApi.image.tag }}"
+        imagePullPolicy: {{ .Values.kgApi.image.pullPolicy }}
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: NEO4J_URI
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "kg-rca-server.fullname" . }}-config
+              key: NEO4J_URI
+        - name: NEO4J_USER
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "kg-rca-server.fullname" . }}-config
+              key: NEO4J_USER
+        - name: NEO4J_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kg-rca-server.fullname" . }}-secrets
+              key: neo4j-password
+        {{- range $key, $value := .Values.kgApi.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.kgApi.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+{{- end }}

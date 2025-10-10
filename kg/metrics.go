@@ -121,6 +121,45 @@ var (
 		[]string{"anomaly_type"}, // resource_churn, error_spike, etc.
 	)
 
+	// RCA Quality Metrics (A@K and MAR)
+	rcaAccuracyAtK = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "kg_rca_accuracy_at_k",
+			Help: "RCA Accuracy at K - percentage of incidents where correct cause is in top-K",
+		},
+		[]string{"k"}, // k=1,3,5,10
+	)
+
+	rcaMeanAverageRank = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "kg_rca_mean_average_rank",
+			Help: "Mean Average Rank (MAR) - average rank of correct root causes",
+		},
+	)
+
+	rcaValidationIncidents = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "kg_rca_validation_incidents_total",
+			Help: "Total number of incidents used for RCA validation",
+		},
+	)
+
+	rcaConfidenceScoreDistribution = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "kg_rca_confidence_score",
+			Help:    "Distribution of RCA confidence scores",
+			Buckets: []float64{0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0},
+		},
+		[]string{"score_type"}, // temporal, distance, domain, final
+	)
+
+	rcaNullConfidenceLinks = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "kg_rca_null_confidence_total",
+			Help: "Total number of RCA links created with NULL confidence (fallback used)",
+		},
+	)
+
 	// Circuit breaker metrics
 	circuitBreakerState = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -137,6 +176,48 @@ var (
 			Help: "Total number of messages sent to dead letter queue",
 		},
 		[]string{"topic", "reason"},
+	)
+
+	// SLA Monitoring Metrics
+	slaViolations = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "kg_sla_violations_total",
+			Help: "Total number of SLA violations by operation type",
+		},
+		[]string{"operation", "severity"}, // severity: warning, critical
+	)
+
+	processingLatencyP95 = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "kg_processing_latency_p95_seconds",
+			Help: "95th percentile processing latency by operation",
+		},
+		[]string{"operation"},
+	)
+
+	processingLatencyP99 = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "kg_processing_latency_p99_seconds",
+			Help: "99th percentile processing latency by operation",
+		},
+		[]string{"operation"},
+	)
+
+	endToEndLatency = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "kg_end_to_end_latency_seconds",
+			Help:    "End-to-end latency from Kafka message to Neo4j commit",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0},
+		},
+		[]string{"topic"},
+	)
+
+	rcaComputeTime = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "kg_rca_compute_time_seconds",
+			Help:    "Time taken to compute RCA links for a single event",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0},
+		},
 	)
 )
 
@@ -234,4 +315,53 @@ func trackIncidentClustering() {
 
 func trackDLQMessage(topic, reason string) {
 	dlqMessagesTotal.WithLabelValues(topic, reason).Inc()
+}
+
+// SLA thresholds (configurable via env vars)
+type SLAThresholds struct {
+	MessageProcessingWarning  time.Duration // Warning if message takes > this
+	MessageProcessingCritical time.Duration // Critical if message takes > this
+	RCAComputeWarning         time.Duration // Warning if RCA takes > this
+	RCAComputeCritical        time.Duration // Critical if RCA takes > this
+	Neo4jQueryWarning         time.Duration // Warning if Neo4j query takes > this
+	Neo4jQueryCritical        time.Duration // Critical if Neo4j query takes > this
+}
+
+var defaultSLAThresholds = SLAThresholds{
+	MessageProcessingWarning:  500 * time.Millisecond,  // 500ms warning
+	MessageProcessingCritical: 2 * time.Second,         // 2s critical
+	RCAComputeWarning:         200 * time.Millisecond,  // 200ms warning
+	RCAComputeCritical:        1 * time.Second,         // 1s critical
+	Neo4jQueryWarning:         100 * time.Millisecond,  // 100ms warning
+	Neo4jQueryCritical:        500 * time.Millisecond,  // 500ms critical
+}
+
+func trackSLACompliance(operation string, duration time.Duration, thresholds SLAThresholds) {
+	var threshold time.Duration
+	var warningThreshold time.Duration
+
+	switch operation {
+	case "message_processing":
+		threshold = thresholds.MessageProcessingCritical
+		warningThreshold = thresholds.MessageProcessingWarning
+	case "rca_compute":
+		threshold = thresholds.RCAComputeCritical
+		warningThreshold = thresholds.RCAComputeWarning
+		rcaComputeTime.Observe(duration.Seconds())
+	case "neo4j_query":
+		threshold = thresholds.Neo4jQueryCritical
+		warningThreshold = thresholds.Neo4jQueryWarning
+	default:
+		return
+	}
+
+	if duration > threshold {
+		slaViolations.WithLabelValues(operation, "critical").Inc()
+	} else if duration > warningThreshold {
+		slaViolations.WithLabelValues(operation, "warning").Inc()
+	}
+}
+
+func trackEndToEndLatency(topic string, duration time.Duration) {
+	endToEndLatency.WithLabelValues(topic).Observe(duration.Seconds())
 }

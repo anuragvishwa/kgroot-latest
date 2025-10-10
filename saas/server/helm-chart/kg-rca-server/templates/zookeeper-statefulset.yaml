@@ -1,0 +1,117 @@
+{{- if .Values.zookeeper.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-zookeeper
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: zookeeper
+spec:
+  serviceName: {{ include "kg-rca-server.fullname" . }}-zookeeper-headless
+  replicas: {{ .Values.zookeeper.replicaCount }}
+  selector:
+    matchLabels:
+      app: zookeeper
+      {{- include "kg-rca-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+        {{- include "kg-rca-server.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: zookeeper
+        image: "{{ .Values.zookeeper.image.repository }}:{{ .Values.zookeeper.image.tag }}"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 2181
+          name: client
+        - containerPort: 2888
+          name: follower
+        - containerPort: 3888
+          name: election
+        env:
+        - name: ALLOW_ANONYMOUS_LOGIN
+          value: "yes"
+        - name: ZOO_SERVER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          {{- toYaml .Values.zookeeper.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /bitnami/zookeeper
+        livenessProbe:
+          exec:
+            command:
+            - zkServer.sh
+            - status
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - zkServer.sh
+            - status
+          initialDelaySeconds: 20
+          periodSeconds: 10
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ .Values.zookeeper.persistence.size }}
+{{- end }}
+---
+{{- if .Values.zookeeper.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-zookeeper
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: zookeeper
+spec:
+  type: ClusterIP
+  ports:
+  - port: 2181
+    targetPort: 2181
+    protocol: TCP
+    name: client
+  selector:
+    app: zookeeper
+    {{- include "kg-rca-server.selectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-zookeeper-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: zookeeper
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 2181
+    targetPort: 2181
+    protocol: TCP
+    name: client
+  - port: 2888
+    targetPort: 2888
+    protocol: TCP
+    name: follower
+  - port: 3888
+    targetPort: 3888
+    protocol: TCP
+    name: election
+  selector:
+    app: zookeeper
+    {{- include "kg-rca-server.selectorLabels" . | nindent 4 }}
+{{- end }}

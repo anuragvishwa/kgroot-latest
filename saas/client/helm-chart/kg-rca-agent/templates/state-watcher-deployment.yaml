@@ -1,0 +1,109 @@
+{{- if .Values.stateWatcher.enabled -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-state-watcher
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+    component: state-watcher
+spec:
+  replicas: {{ .Values.stateWatcher.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "kg-rca-agent.selectorLabels" . | nindent 6 }}
+      component: state-watcher
+  template:
+    metadata:
+      labels:
+        {{- include "kg-rca-agent.selectorLabels" . | nindent 8 }}
+        component: state-watcher
+      annotations:
+        checksum/config: {{ toYaml .Values.client | sha256sum }}
+        checksum/secret: {{ toYaml .Values.client.kafka.sasl | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: state-watcher
+          image: "{{ .Values.stateWatcher.image.repository }}:{{ .Values.stateWatcher.image.tag }}"
+          imagePullPolicy: {{ .Values.stateWatcher.image.pullPolicy }}
+          env:
+            # Configuration from ConfigMap
+            - name: CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: CLIENT_ID
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: KAFKA_BROKERS
+            - name: KAFKA_TOPIC_RESOURCE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: KAFKA_TOPIC_RESOURCE
+            - name: KAFKA_TOPIC_TOPOLOGY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: KAFKA_TOPIC_TOPOLOGY
+            - name: WATCH_NAMESPACES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: WATCH_NAMESPACES
+            - name: KAFKA_SASL_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: KAFKA_SASL_ENABLED
+            {{- if .Values.client.kafka.sasl.enabled }}
+            # Kafka SASL Credentials from Secret
+            - name: KAFKA_SASL_MECHANISM
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-secrets
+                  key: kafka-sasl-mechanism
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-secrets
+                  key: kafka-sasl-username
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-secrets
+                  key: kafka-sasl-password
+            {{- end }}
+          resources:
+            {{- toYaml .Values.stateWatcher.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      restartPolicy: Always
+{{- end }}

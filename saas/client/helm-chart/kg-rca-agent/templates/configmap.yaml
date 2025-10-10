@@ -1,0 +1,31 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+    component: config
+data:
+  # Client Configuration
+  CLIENT_ID: {{ required "client.id is required" .Values.client.id | quote }}
+  SERVER_URL: {{ .Values.client.serverUrl | quote }}
+
+  # Kafka Configuration
+  KAFKA_BROKERS: {{ .Values.client.kafka.brokers | quote }}
+  KAFKA_SASL_ENABLED: {{ .Values.client.kafka.sasl.enabled | quote }}
+
+  # Monitoring Configuration
+  {{- if .Values.client.monitoredNamespaces }}
+  WATCH_NAMESPACES: {{ join "," .Values.client.monitoredNamespaces | quote }}
+  {{- else }}
+  WATCH_NAMESPACES: ""
+  {{- end }}
+
+  # Kafka Topics (templated with client ID)
+  KAFKA_TOPIC_RESOURCE: {{ printf "%s.state.k8s.resource" .Values.client.id | quote }}
+  KAFKA_TOPIC_TOPOLOGY: {{ printf "%s.state.k8s.topology" .Values.client.id | quote }}
+  KAFKA_TOPIC_LOGS: {{ printf "%s.logs.normalized" .Values.client.id | quote }}
+  KAFKA_TOPIC_EVENTS: {{ printf "%s.events.normalized" .Values.client.id | quote }}
+  KAFKA_TOPIC_ALERTS: {{ printf "%s.alerts.raw" .Values.client.id | quote }}

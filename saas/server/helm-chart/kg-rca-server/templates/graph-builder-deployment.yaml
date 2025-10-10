@@ -1,0 +1,69 @@
+{{- if .Values.graphBuilder.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-graph-builder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: graph-builder
+    component: rca-engine
+spec:
+  replicas: {{ .Values.graphBuilder.replicaCount }}
+  selector:
+    matchLabels:
+      app: graph-builder
+      {{- include "kg-rca-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: graph-builder
+        {{- include "kg-rca-server.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: graph-builder
+        image: "{{ .Values.graphBuilder.image.repository }}:{{ .Values.graphBuilder.image.tag }}"
+        imagePullPolicy: {{ .Values.graphBuilder.image.pullPolicy }}
+        ports:
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: NEO4J_URI
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "kg-rca-server.fullname" . }}-config
+              key: NEO4J_URI
+        - name: NEO4J_USER
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "kg-rca-server.fullname" . }}-config
+              key: NEO4J_USER
+        - name: NEO4J_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kg-rca-server.fullname" . }}-secrets
+              key: neo4j-password
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "kg-rca-server.fullname" . }}-config
+              key: KAFKA_BROKERS
+        {{- range $key, $value := .Values.graphBuilder.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.graphBuilder.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9090
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+{{- end }}

@@ -1,0 +1,397 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# KG RCA SERVER - SaaS Multi-Tenant Configuration
+# ═══════════════════════════════════════════════════════════════════════════
+
+global:
+  domain: kg-rca.yourcompany.com
+  environment: production
+
+# ───────────────────────────────────────────────────────────────────────────
+# Neo4j - Graph Database (Multi-Database for Multi-Tenancy)
+# ───────────────────────────────────────────────────────────────────────────
+neo4j:
+  enabled: true
+  image:
+    repository: neo4j
+    tag: "5.20"
+    pullPolicy: IfNotPresent
+
+  auth:
+    username: neo4j
+    password: "changeme"  # CHANGE IN PRODUCTION
+
+  plugins:
+    - apoc
+
+  # High-availability cluster
+  replicaCount: 3
+  clusterEnabled: true
+
+  resources:
+    requests:
+      cpu: 8000m
+      memory: 32Gi
+    limits:
+      cpu: 16000m
+      memory: 64Gi
+
+  persistence:
+    enabled: true
+    storageClassName: "fast-ssd"
+    size: 500Gi
+
+  config:
+    # Memory settings
+    server.memory.heap.max_size: "32G"
+    server.memory.heap.initial_size: "16G"
+    server.memory.pagecache.size: "16G"
+    db.memory.transaction.total_max: "16G"
+    db.memory.transaction.max: "8G"
+
+    # Security
+    dbms.security.procedures.unrestricted: "apoc.*"
+
+    # Performance
+    dbms.query.cache_size: "1000"
+    dbms.routing.default_router: "SERVER"
+
+  service:
+    type: ClusterIP
+    http:
+      port: 7474
+    bolt:
+      port: 7687
+
+# ───────────────────────────────────────────────────────────────────────────
+# Kafka - Event Stream (Multi-Topic for Multi-Tenancy)
+# ───────────────────────────────────────────────────────────────────────────
+kafka:
+  enabled: true
+  image:
+    repository: bitnami/kafka
+    tag: "3.7"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 5
+
+  resources:
+    requests:
+      cpu: 4000m
+      memory: 8Gi
+    limits:
+      cpu: 8000m
+      memory: 16Gi
+
+  persistence:
+    enabled: true
+    storageClassName: "fast-ssd"
+    size: 1Ti
+
+  config:
+    num.partitions: "6"
+    default.replication.factor: "3"
+    min.insync.replicas: "2"
+    log.retention.hours: "168"  # 7 days
+    log.segment.bytes: "1073741824"  # 1GB
+    compression.type: "gzip"
+    auto.create.topics.enable: "false"  # Create topics explicitly per client
+
+  # SASL authentication for clients
+  auth:
+    enabled: true
+    sasl:
+      mechanism: SCRAM-SHA-512
+      interBrokerMechanism: PLAIN
+
+  service:
+    type: LoadBalancer  # Expose to client clusters
+    port: 9092
+    nodePort: null
+
+zookeeper:
+  enabled: true
+  image:
+    repository: bitnami/zookeeper
+    tag: "3.9"
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+  persistence:
+    enabled: true
+    size: 50Gi
+
+# ───────────────────────────────────────────────────────────────────────────
+# Graph Builder - RCA Engine
+# ───────────────────────────────────────────────────────────────────────────
+graphBuilder:
+  enabled: true
+  image:
+    repository: kg-rca/graph-builder
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 5
+
+  autoscaling:
+    enabled: true
+    minReplicas: 5
+    maxReplicas: 50
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+  env:
+    KAFKA_BROKERS: "kafka:9092"
+    KAFKA_GROUP: "kg-builder"
+    NEO4J_URI: "neo4j://neo4j:7687"
+    RCA_WINDOW_MIN: "15"
+    SEVERITY_ESCALATION_ENABLED: "true"
+    SEVERITY_ESCALATION_WINDOW_MIN: "5"
+    SEVERITY_ESCALATION_THRESHOLD: "3"
+    INCIDENT_CLUSTERING_ENABLED: "true"
+    ANOMALY_DETECTION_ENABLED: "true"
+    METRICS_PORT: "9090"
+
+  service:
+    type: ClusterIP
+    port: 9090
+    name: metrics
+
+# ───────────────────────────────────────────────────────────────────────────
+# KG API - REST API with Multi-Tenant Support
+# ───────────────────────────────────────────────────────────────────────────
+kgApi:
+  enabled: true
+  image:
+    repository: kg-rca/kg-api
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 10
+
+  autoscaling:
+    enabled: true
+    minReplicas: 10
+    maxReplicas: 100
+    targetCPUUtilizationPercentage: 70
+
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  env:
+    NEO4J_URI: "neo4j://neo4j:7687"
+    PORT: "8080"
+    RATE_LIMIT_ENABLED: "true"
+    AUTH_ENABLED: "true"
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+    hosts:
+      - host: api.kg-rca.yourcompany.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: kg-api-tls
+        hosts:
+          - api.kg-rca.yourcompany.com
+
+# ───────────────────────────────────────────────────────────────────────────
+# Billing Service - Usage Tracking & Stripe Integration
+# ───────────────────────────────────────────────────────────────────────────
+billingService:
+  enabled: true
+  image:
+    repository: kg-rca/billing-service
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 3
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  env:
+    NEO4J_URI: "neo4j://neo4j:7687"
+    STRIPE_API_KEY: ""  # Set via secret
+    POSTGRES_HOST: "postgres"
+    POSTGRES_DB: "billing"
+
+  service:
+    type: ClusterIP
+    port: 8081
+
+# ───────────────────────────────────────────────────────────────────────────
+# PostgreSQL - Billing Database
+# ───────────────────────────────────────────────────────────────────────────
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16"
+
+  auth:
+    database: billing
+    username: billing
+    password: "changeme"  # CHANGE IN PRODUCTION
+
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+  persistence:
+    enabled: true
+    size: 100Gi
+
+# ───────────────────────────────────────────────────────────────────────────
+# Prometheus - Metrics Collection
+# ───────────────────────────────────────────────────────────────────────────
+prometheus:
+  enabled: true
+  image:
+    repository: prom/prometheus
+    tag: "latest"
+
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 8Gi
+
+  persistence:
+    enabled: true
+    size: 500Gi
+
+  config:
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: 'graph-builder'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - kg-rca-server
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: graph-builder
+            action: keep
+
+# ───────────────────────────────────────────────────────────────────────────
+# Grafana - Monitoring Dashboard
+# ───────────────────────────────────────────────────────────────────────────
+grafana:
+  enabled: true
+  image:
+    repository: grafana/grafana
+    tag: "latest"
+
+  adminPassword: "changeme"  # CHANGE IN PRODUCTION
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  persistence:
+    enabled: true
+    size: 10Gi
+
+  ingress:
+    enabled: true
+    hosts:
+      - host: grafana.kg-rca.yourcompany.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.kg-rca.yourcompany.com
+
+# ───────────────────────────────────────────────────────────────────────────
+# Alert Manager - Alert Routing
+# ───────────────────────────────────────────────────────────────────────────
+alertManager:
+  enabled: true
+  image:
+    repository: prom/alertmanager
+    tag: "latest"
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+  config:
+    global:
+      resolve_timeout: 5m
+
+    route:
+      receiver: 'default'
+      group_by: ['alertname', 'cluster']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 12h
+
+# ───────────────────────────────────────────────────────────────────────────
+# Service Monitor - Prometheus Operator Integration
+# ───────────────────────────────────────────────────────────────────────────
+serviceMonitor:
+  enabled: false  # Enable if using Prometheus Operator
+  interval: 30s
+  scrapeTimeout: 10s
+
+# ───────────────────────────────────────────────────────────────────────────
+# Security & Secrets
+# ───────────────────────────────────────────────────────────────────────────
+secrets:
+  neo4j:
+    password: ""  # Override with --set or external secret
+  kafka:
+    saslPassword: ""
+  stripe:
+    apiKey: ""
+  postgresql:
+    password: ""
+
+# ───────────────────────────────────────────────────────────────────────────
+# Backup & Disaster Recovery
+# ───────────────────────────────────────────────────────────────────────────
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention: 30  # Keep 30 days
+  storage:
+    type: s3
+    bucket: "kg-rca-backups"
+    region: "us-east-1"

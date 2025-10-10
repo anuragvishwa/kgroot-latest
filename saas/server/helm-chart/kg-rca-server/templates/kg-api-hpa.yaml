@@ -1,0 +1,24 @@
+{{- if and .Values.kgApi.enabled .Values.kgApi.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-kg-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: kg-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "kg-rca-server.fullname" . }}-kg-api
+  minReplicas: {{ .Values.kgApi.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.kgApi.autoscaling.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.kgApi.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

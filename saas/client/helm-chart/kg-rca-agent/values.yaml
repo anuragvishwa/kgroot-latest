@@ -1,0 +1,238 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# KG RCA AGENT - Client Configuration
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Client identification and authentication
+client:
+  # Client ID provided by server (e.g., "client-acme-abc123")
+  id: ""
+
+  # API key for authentication
+  apiKey: ""
+
+  # Server connection details
+  serverUrl: "https://api.kg-rca.yourcompany.com"
+
+  # Kafka connection
+  kafka:
+    brokers: "kafka.kg-rca.yourcompany.com:9092"
+    sasl:
+      enabled: true
+      mechanism: SCRAM-SHA-512
+      username: ""  # Same as client.id
+      password: ""  # Provided by server
+
+  # Namespace to monitor (default: all accessible namespaces)
+  monitoredNamespaces: []  # Empty means all accessible
+
+# ───────────────────────────────────────────────────────────────────────────
+# State Watcher - Kubernetes Resource Monitoring
+# ───────────────────────────────────────────────────────────────────────────
+stateWatcher:
+  enabled: true
+  image:
+    repository: kg-rca/state-watcher
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  env:
+    KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
+    KAFKA_TOPIC_RESOURCE: "{{ .client.id }}.state.k8s.resource"
+    KAFKA_TOPIC_TOPOLOGY: "{{ .client.id }}.state.k8s.topology"
+    WATCH_NAMESPACES: ""  # Populated from client.monitoredNamespaces
+
+# ───────────────────────────────────────────────────────────────────────────
+# Vector - Log Collection
+# ───────────────────────────────────────────────────────────────────────────
+vector:
+  enabled: true
+  image:
+    repository: timberio/vector
+    tag: "0.34.0-alpine"
+    pullPolicy: IfNotPresent
+
+  # DaemonSet to collect logs from all nodes
+  daemonset: true
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  config:
+    sources:
+      kubernetes_logs:
+        type: kubernetes_logs
+        exclude_paths_glob_patterns:
+          - "**/kube-system/**"
+          - "**/kube-public/**"
+
+    transforms:
+      normalize:
+        type: remap
+        inputs: ["kubernetes_logs"]
+        source: |
+          .client_id = "{{ .client.id }}"
+          .event_time = now()
+
+    sinks:
+      kafka:
+        type: kafka
+        inputs: ["normalize"]
+        bootstrap_servers: ""  # Populated from client.kafka.brokers
+        topic: "{{ .client.id }}.logs.normalized"
+        encoding:
+          codec: json
+
+# ───────────────────────────────────────────────────────────────────────────
+# Event Exporter - Kubernetes Events
+# ───────────────────────────────────────────────────────────────────────────
+eventExporter:
+  enabled: true
+  image:
+    repository: opsgenie/kubernetes-event-exporter
+    tag: "v1.4"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  config:
+    route:
+      routes:
+        - match:
+            - receiver: kafka
+    receivers:
+      - name: kafka
+        kafka:
+          brokers: []  # Populated from client.kafka.brokers
+          topic: "{{ .client.id }}.events.normalized"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Prometheus Agent - Metrics Collection
+# ───────────────────────────────────────────────────────────────────────────
+prometheusAgent:
+  enabled: true
+  image:
+    repository: prom/prometheus
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # Remote write to server
+  remoteWrite:
+    enabled: true
+    url: "{{ .client.serverUrl }}/api/v1/write"
+    headers:
+      Authorization: "Bearer {{ .client.apiKey }}"
+
+  config:
+    global:
+      scrape_interval: 30s
+      evaluation_interval: 30s
+
+    scrape_configs:
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+
+# ───────────────────────────────────────────────────────────────────────────
+# Alert Receiver - Prometheus Alerts
+# ───────────────────────────────────────────────────────────────────────────
+alertReceiver:
+  enabled: true
+  image:
+    repository: kg-rca/alert-receiver
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  env:
+    KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
+    KAFKA_TOPIC: "{{ .client.id }}.alerts.raw"
+    CLIENT_ID: ""  # Populated from client.id
+
+# ───────────────────────────────────────────────────────────────────────────
+# RBAC - Service Account and Permissions
+# ───────────────────────────────────────────────────────────────────────────
+rbac:
+  create: true
+
+  # Cluster-wide read permissions
+  clusterRole:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "endpoints", "nodes", "events"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["batch"]
+        resources: ["jobs", "cronjobs"]
+        verbs: ["get", "list", "watch"]
+
+serviceAccount:
+  create: true
+  name: kg-rca-agent
+
+# ───────────────────────────────────────────────────────────────────────────
+# Network Policies
+# ───────────────────────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: false
+
+  egress:
+    # Allow outbound to server
+    - to:
+      - podSelector: {}
+      ports:
+      - protocol: TCP
+        port: 443
+    # Allow DNS
+    - to:
+      - namespaceSelector: {}
+      ports:
+      - protocol: UDP
+        port: 53

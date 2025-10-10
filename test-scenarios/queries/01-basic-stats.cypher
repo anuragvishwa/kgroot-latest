@@ -35,8 +35,11 @@ LIMIT 50;
 // 4. Severity distribution
 MATCH (e:Episodic)-[:ABOUT]->(r:Resource)
 WHERE r.ns = 'kg-testing'
+WITH e.severity as severity, count(*) as count
+WITH collect({severity: severity, count: count}) as groups, sum(count) as total
+UNWIND groups as group
 RETURN
-  e.severity as severity,
-  count(*) as count,
-  count(*) * 100.0 / sum(count(*)) OVER() as percentage
+  group.severity as severity,
+  group.count as count,
+  round(group.count * 100.0 / total, 2) as percentage
 ORDER BY count DESC;

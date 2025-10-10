@@ -5,3 +5,5 @@ data
 
 kg/graph-builder
 kg/go.sum
+
+alerts-enricher/node_modules

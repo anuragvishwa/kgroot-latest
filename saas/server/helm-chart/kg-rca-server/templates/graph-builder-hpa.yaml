@@ -1,0 +1,30 @@
+{{- if and .Values.graphBuilder.enabled .Values.graphBuilder.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "kg-rca-server.fullname" . }}-graph-builder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-server.labels" . | nindent 4 }}
+    app: graph-builder
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "kg-rca-server.fullname" . }}-graph-builder
+  minReplicas: {{ .Values.graphBuilder.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.graphBuilder.autoscaling.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.graphBuilder.autoscaling.targetCPUUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.graphBuilder.autoscaling.targetMemoryUtilizationPercentage }}
+{{- end }}
