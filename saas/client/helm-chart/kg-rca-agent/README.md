@@ -42,8 +42,7 @@ helm install my-rca-agent lumni/kg-rca-agent \
   --version 1.0.1 \
   --set client.id=<your-client-id> \
   --set client.apiKey=<your-api-key> \
-  --set server.kafka.brokers="kafka.lumniverse.com:9093" \
-  --set server.kafka.security.protocol="SSL"
+  --set server.kafka.brokers="kafka.lumniverse.com:9092" \
 ```
 
 ### Using values.yaml
