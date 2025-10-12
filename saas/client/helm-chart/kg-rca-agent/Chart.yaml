@@ -1,15 +1,63 @@
 apiVersion: v2
 name: kg-rca-agent
-description: Knowledge Graph RCA Agent - Client-side data collectors
+description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.0
-appVersion: "1.0.0"
+version: 1.0.1
+appVersion: "1.0.1"
 keywords:
   - knowledge-graph
   - rca
   - observability
   - agent
   - monitoring
+  - kubernetes
+  - troubleshooting
+  - root-cause-analysis
+  - lumniverse
+home: https://github.com/anuragvishwa/kgroot-latest
+sources:
+  - https://github.com/anuragvishwa/kgroot-latest
 maintainers:
-  - name: KG RCA Team
-    email: support@kg-rca.com
+  - name: Lumniverse
+    email: support@lumniverse.com
+    url: https://github.com/anuragvishwa
+icon: https://raw.githubusercontent.com/anuragvishwa/kgroot-latest/main/assets/logo.png
+annotations:
+  artifacthub.io/displayName: "KG RCA Agent by Lumniverse"
+  artifacthub.io/category: "monitoring-logging"
+  artifacthub.io/license: "Apache-2.0"
+  artifacthub.io/operator: "false"
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/recommendations: |
+    - url: https://kafka.apache.org/
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://github.com/anuragvishwa/kgroot-latest/blob/main/README.md
+    - name: Support
+      url: https://github.com/anuragvishwa/kgroot-latest/issues
+    - name: Website
+      url: https://lumniverse.com
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial production release of KG RCA Agent
+    - kind: added
+      description: Kubernetes event collection with real-time streaming
+    - kind: added
+      description: Pod log aggregation with Vector
+    - kind: added
+      description: SSL/TLS support for secure Kafka communication
+    - kind: added
+      description: Configurable resource limits and requests
+    - kind: added
+      description: RBAC with minimal required permissions
+    - kind: added
+      description: Multi-namespace and cluster-wide monitoring support
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/signKey: |
+    fingerprint: # Add GPG key fingerprint if signing releases
+    url: # Add GPG public key URL if signing releases
+  artifacthub.io/images: |
+    - name: event-exporter
+      image: anuragvishwa/kg-event-exporter:1.0.1
+    - name: vector
+      image: timberio/vector:0.31.0-alpine

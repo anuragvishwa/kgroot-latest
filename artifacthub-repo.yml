@@ -1,0 +1,6 @@
+# Artifact Hub repository metadata file
+# Repository name: Lumni
+repositoryID: # This will be filled automatically by Artifact Hub
+owners:
+  - name: Lumniverse
+    email: support@lumniverse.com
