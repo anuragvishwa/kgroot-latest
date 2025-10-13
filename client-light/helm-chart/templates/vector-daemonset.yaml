@@ -1,0 +1,144 @@
+{{- if .Values.vector.enabled -}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-vector-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+    component: vector
+data:
+  vector.toml: |
+    # Data directory
+    data_dir = "/var/lib/vector"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Sources - Kubernetes Logs
+    # ─────────────────────────────────────────────────────────────────────────
+    [sources.kubernetes_logs]
+    type = "kubernetes_logs"
+    {{- if .Values.vector.config.sources.kubernetes_logs.exclude_paths_glob_patterns }}
+    exclude_paths_glob_patterns = {{ toJson .Values.vector.config.sources.kubernetes_logs.exclude_paths_glob_patterns }}
+    {{- end }}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Transforms - Add Client Metadata
+    # ─────────────────────────────────────────────────────────────────────────
+    [transforms.normalize]
+    type = "remap"
+    inputs = ["kubernetes_logs"]
+    source = '''
+    .client_id = "{{ .Values.client.id }}"
+    .event_time = now()
+    '''
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Sinks - Kafka Output
+    # ─────────────────────────────────────────────────────────────────────────
+    [sinks.kafka]
+    type = "kafka"
+    inputs = ["normalize"]
+    bootstrap_servers = "{{ .Values.client.kafka.brokers }}"
+    topic = "{{ .Values.client.id }}.logs.normalized"
+    compression = "gzip"
+
+    [sinks.kafka.encoding]
+    codec = "json"
+
+    {{- if .Values.client.kafka.sasl.enabled }}
+    # SASL Authentication
+    [sinks.kafka.sasl]
+    enabled = true
+    mechanism = "{{ .Values.client.kafka.sasl.mechanism }}"
+    username = "${KAFKA_SASL_USERNAME}"
+    password = "${KAFKA_SASL_PASSWORD}"
+    {{- end }}
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-vector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+    component: vector
+spec:
+  selector:
+    matchLabels:
+      {{- include "kg-rca-agent.selectorLabels" . | nindent 6 }}
+      component: vector
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "kg-rca-agent.selectorLabels" . | nindent 8 }}
+        component: vector
+      annotations:
+        checksum/config: {{ toYaml .Values.vector.config | sha256sum }}
+        checksum/secret: {{ toYaml .Values.client.kafka.sasl | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: vector
+          image: "{{ .Values.vector.image.repository }}:{{ .Values.vector.image.tag }}"
+          imagePullPolicy: {{ .Values.vector.image.pullPolicy }}
+          args:
+            - "--config"
+            - "/etc/vector/vector.toml"
+          env:
+            {{- if .Values.client.kafka.sasl.enabled }}
+            # Kafka SASL Credentials from Secret
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-secrets
+                  key: kafka-sasl-username
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-secrets
+                  key: kafka-sasl-password
+            {{- end }}
+          resources:
+            {{- toYaml .Values.vector.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+            - name: var-log
+              mountPath: /var/log
+              readOnly: true
+            - name: var-lib
+              mountPath: /var/lib
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/vector
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kg-rca-agent.fullname" . }}-vector-config
+        - name: var-log
+          hostPath:
+            path: /var/log
+        - name: var-lib
+          hostPath:
+            path: /var/lib
+        - name: data
+          emptyDir: {}
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
+{{- end }}

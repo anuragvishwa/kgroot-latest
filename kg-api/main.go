@@ -466,10 +466,10 @@ func (s *Server) getGraphStats(ctx context.Context) (*GraphStats, error) {
 
 	// Get counts
 	result, err := session.Run(ctx, `
-		MATCH (r:Resource) WITH count(r) as resources
-		MATCH (e:Episodic) WITH resources, count(e) as events
-		MATCH (inc:Incident) WITH resources, events, count(inc) as incidents
-		MATCH ()-[rel]->() WITH resources, events, incidents, count(rel) as edges
+		OPTIONAL MATCH (r:Resource) WITH count(r) as resources
+		OPTIONAL MATCH (e:Episodic) WITH resources, count(e) as events
+		OPTIONAL MATCH (inc:Incident) WITH resources, events, count(inc) as incidents
+		OPTIONAL MATCH ()-[rel]->() WITH resources, events, incidents, count(rel) as edges
 		RETURN resources, events, incidents, edges
 	`, nil)
 	if err != nil {

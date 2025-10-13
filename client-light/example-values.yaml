@@ -1,0 +1,122 @@
+# Example Values for KG RCA Agent
+# Copy this file and customize for your cluster
+
+# ============================================================================
+# REQUIRED: Client Configuration
+# ============================================================================
+client:
+  # Unique identifier for this Kubernetes cluster
+  # Examples: "prod-us-west-2", "staging-eu-central", "dev-local"
+  id: "my-cluster-prod"
+
+  # API key for authentication (if server requires it)
+  # Leave empty if server doesn't require authentication
+  apiKey: ""
+
+  # Kafka connection to KG RCA Server
+  kafka:
+    # OPTION 1: Plaintext connection (testing/internal networks)
+    bootstrapServers: "3.93.235.47:9092"
+
+    # OPTION 2: SSL connection (production)
+    # bootstrapServers: "kafka.lumniverse.com:9093"
+    # sasl:
+    #   enabled: true
+    #   mechanism: SCRAM-SHA-512
+    #   username: "my-cluster-prod"
+    #   password: "your-secure-password"
+
+  # Optional: Limit monitoring to specific namespaces
+  # If empty, monitors all accessible namespaces
+  monitoredNamespaces: []
+  # monitoredNamespaces: ["production", "staging", "critical-apps"]
+
+# ============================================================================
+# Vector - Log Collection (DaemonSet)
+# ============================================================================
+vector:
+  enabled: true
+
+  # Resource limits per node
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Log filtering (optional)
+  # config:
+  #   filters:
+  #     excludeNamespaces: ["kube-system", "kube-public"]
+  #     includeOnlyErrors: false
+
+# ============================================================================
+# Event Exporter - Kubernetes Events
+# ============================================================================
+eventExporter:
+  enabled: true
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ============================================================================
+# State Watcher - Resource State & Topology
+# ============================================================================
+stateWatcher:
+  enabled: true
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ============================================================================
+# Prometheus Agent - Metrics (Optional)
+# ============================================================================
+prometheusAgent:
+  enabled: false  # Set to true if you want metrics collection
+
+  # Server endpoint (if enabled)
+  # remoteWrite:
+  #   url: "https://your-server.com/api/v1/write"
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+# ============================================================================
+# Advanced Configuration
+# ============================================================================
+
+# Node selector (optional)
+# nodeSelector:
+#   monitoring: "enabled"
+
+# Tolerations (optional)
+# tolerations:
+#   - key: "dedicated"
+#     operator: "Equal"
+#     value: "monitoring"
+#     effect: "NoSchedule"
+
+# Image pull secrets (if using private registry)
+# imagePullSecrets:
+#   - name: regcred

@@ -1,0 +1,20 @@
+# Helm
+*.tgz
+charts/
+.helm
+
+# Values with secrets
+*-secrets.yaml
+my-values.yaml
+prod-*.yaml
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
