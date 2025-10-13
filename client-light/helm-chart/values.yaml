@@ -17,7 +17,7 @@ client:
   kafka:
     brokers: "kafka.kg-rca.yourcompany.com:9092"
     sasl:
-      enabled: true
+      enabled: false  # Set to true for SSL/SASL authentication
       mechanism: SCRAM-SHA-512
       username: ""  # Same as client.id
       password: ""  # Provided by server
