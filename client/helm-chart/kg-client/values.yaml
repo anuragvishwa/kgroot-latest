@@ -1,0 +1,181 @@
+# KGroot Client Configuration
+# This Helm chart deploys observability collectors to send data to KGroot server
+
+# ============================================================================
+# SERVER CONNECTION - REQUIRED
+# ============================================================================
+server:
+  # Kafka broker endpoint (REQUIRED)
+  kafka:
+    # For mini-server: Use the public IP or hostname
+    # Example: "ec2-xxx.compute.amazonaws.com:9092"
+    brokers: "localhost:9092"  # CHANGE THIS
+
+    # SASL authentication (optional, for production)
+    sasl:
+      enabled: false
+      mechanism: "PLAIN"
+      username: ""
+      password: ""
+
+    # TLS/SSL (optional, for production)
+    tls:
+      enabled: false
+
+# ============================================================================
+# K8S EVENT EXPORTER
+# Watches Kubernetes events and sends to Kafka
+# ============================================================================
+eventExporter:
+  enabled: true
+
+  image:
+    repository: ghcr.io/resmoio/kubernetes-event-exporter
+    tag: "v1.7"
+    pullPolicy: IfNotPresent
+
+  # Topics
+  topic: "raw.k8s.events"
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Event filters (optional)
+  filters:
+    # Only export events with these types
+    types:
+      - Warning
+      - Error
+      - Normal
+
+    # Ignore events from these namespaces
+    ignoreNamespaces: []
+
+# ============================================================================
+# STATE WATCHER
+# Watches K8s resource state (Pods, Deployments, etc.) and topology
+# ============================================================================
+stateWatcher:
+  enabled: true
+
+  image:
+    repository: busybox  # Placeholder - you'll need to build this
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  # Topics
+  resourceTopic: "state.k8s.resource"
+  topologyTopic: "state.k8s.topology"
+
+  # Sync interval (how often to publish full state)
+  syncIntervalSeconds: 300  # 5 minutes
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Which resources to watch
+  watchedResources:
+    - pods
+    - deployments
+    - services
+    - replicasets
+    - daemonsets
+    - statefulsets
+    - configmaps
+    - secrets
+
+# ============================================================================
+# VECTOR - Log and Alert Collection
+# Collects pod logs and Prometheus alerts
+# ============================================================================
+vector:
+  enabled: true
+
+  image:
+    repository: timberio/vector
+    tag: "0.34.0-alpine"
+    pullPolicy: IfNotPresent
+
+  # Deploy as DaemonSet to collect logs from all nodes
+  daemonset:
+    enabled: true
+
+  # Topics
+  topics:
+    logs: "raw.k8s.logs"
+    alerts: "raw.prom.alerts"
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Log collection settings
+  logCollection:
+    # Namespaces to collect logs from (empty = all)
+    namespaces: []
+
+    # Namespaces to exclude
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+
+    # Log level filtering (collect these levels)
+    levels:
+      - ERROR
+      - FATAL
+      - WARN
+      - INFO
+
+  # Alertmanager webhook settings
+  alertWebhook:
+    enabled: true
+    port: 9090
+    path: "/alerts"
+
+# ============================================================================
+# RBAC Settings
+# ============================================================================
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: "kg-client"
+  annotations: {}
+
+# ============================================================================
+# NAMESPACE
+# ============================================================================
+namespace: "kgroot-client"
+createNamespace: true
+
+# ============================================================================
+# GLOBAL SETTINGS
+# ============================================================================
+global:
+  # Cluster identifier (appears in all events)
+  clusterName: "my-cluster"  # CHANGE THIS
+
+  # Additional labels for all resources
+  labels: {}
+
+  # Additional annotations for all resources
+  annotations: {}

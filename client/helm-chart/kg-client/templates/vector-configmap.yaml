@@ -1,0 +1,157 @@
+{{- if .Values.vector.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kg-client.fullname" . }}-vector
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kg-client.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vector
+data:
+  vector.yaml: |
+    # Vector configuration for KGroot log and alert collection
+
+    # ============================================================================
+    # SOURCES
+    # ============================================================================
+
+    # Kubernetes pod logs
+    sources:
+      kubernetes_logs:
+        type: kubernetes_logs
+        {{- if .Values.vector.logCollection.namespaces }}
+        namespace_labels:
+          namespace:
+            {{- range .Values.vector.logCollection.namespaces }}
+            - {{ . | quote }}
+            {{- end }}
+        {{- end }}
+        {{- if .Values.vector.logCollection.excludeNamespaces }}
+        exclude_paths_glob_patterns:
+          {{- range .Values.vector.logCollection.excludeNamespaces }}
+          - "/var/log/pods/{{ . }}_*/**/*.log"
+          {{- end }}
+        {{- end }}
+        extra_label_selector: "app!=vector"  # Don't collect vector's own logs
+
+      # Prometheus Alertmanager webhook
+      alertmanager_webhook:
+        type: http_server
+        address: "0.0.0.0:{{ .Values.vector.alertWebhook.port }}"
+        path: "{{ .Values.vector.alertWebhook.path }}"
+        encoding: json
+
+    # ============================================================================
+    # TRANSFORMS
+    # ============================================================================
+
+    transforms:
+      # Parse and normalize Kubernetes logs
+      normalize_k8s_logs:
+        type: remap
+        inputs:
+          - kubernetes_logs
+        source: |
+          # Extract log level
+          level = "INFO"
+          if match(.message, r'ERROR|error|Error') {
+            level = "ERROR"
+          } else if match(.message, r'FATAL|fatal|Fatal') {
+            level = "FATAL"
+          } else if match(.message, r'WARN|warn|Warning|WARNING') {
+            level = "WARN"
+          }
+
+          # Build normalized structure
+          . = {
+            "timestamp": .timestamp,
+            "level": level,
+            "message": .message,
+            "pod_name": .kubernetes.pod_name,
+            "namespace": .kubernetes.pod_namespace,
+            "container": .kubernetes.container_name,
+            "node": .kubernetes.pod_node_name,
+            "cluster": "{{ .Values.global.clusterName }}",
+            "labels": .kubernetes.pod_labels
+          }
+
+      # Filter logs by level
+      filter_log_levels:
+        type: filter
+        inputs:
+          - normalize_k8s_logs
+        condition: |
+          {{- $levels := .Values.vector.logCollection.levels }}
+          {{- range $i, $level := $levels }}
+          {{- if $i }} || {{ end }}.level == "{{ $level }}"
+          {{- end }}
+
+      # Normalize Prometheus alerts
+      normalize_alerts:
+        type: remap
+        inputs:
+          - alertmanager_webhook
+        source: |
+          # Alertmanager sends batches, keep the structure
+          . = {
+            "receiver": .receiver,
+            "status": .status,
+            "alerts": .alerts,
+            "groupLabels": .groupLabels,
+            "commonLabels": .commonLabels,
+            "commonAnnotations": .commonAnnotations,
+            "externalURL": .externalURL,
+            "cluster": "{{ .Values.global.clusterName }}",
+            "timestamp": now()
+          }
+
+    # ============================================================================
+    # SINKS
+    # ============================================================================
+
+    sinks:
+      # Send normalized logs to Kafka
+      kafka_logs:
+        type: kafka
+        inputs:
+          - filter_log_levels
+        bootstrap_servers: {{ .Values.server.kafka.brokers | quote }}
+        topic: {{ .Values.vector.topics.logs | quote }}
+        compression: gzip
+        encoding:
+          codec: json
+        {{- if .Values.server.kafka.sasl.enabled }}
+        sasl:
+          enabled: true
+          mechanism: {{ .Values.server.kafka.sasl.mechanism | quote }}
+          username: {{ .Values.server.kafka.sasl.username | quote }}
+          password: {{ .Values.server.kafka.sasl.password | quote }}
+        {{- end }}
+        {{- if .Values.server.kafka.tls.enabled }}
+        tls:
+          enabled: true
+        {{- end }}
+
+      # Send alerts to Kafka
+      kafka_alerts:
+        type: kafka
+        inputs:
+          - normalize_alerts
+        bootstrap_servers: {{ .Values.server.kafka.brokers | quote }}
+        topic: {{ .Values.vector.topics.alerts | quote }}
+        compression: gzip
+        encoding:
+          codec: json
+        {{- if .Values.server.kafka.sasl.enabled }}
+        sasl:
+          enabled: true
+          mechanism: {{ .Values.server.kafka.sasl.mechanism | quote }}
+          username: {{ .Values.server.kafka.sasl.username | quote }}
+          password: {{ .Values.server.kafka.sasl.password | quote }}
+        {{- end }}
+        {{- if .Values.server.kafka.tls.enabled }}
+        tls:
+          enabled: true
+        {{- end }}
+{{- end }}

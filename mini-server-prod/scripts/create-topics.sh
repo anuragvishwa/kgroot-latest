@@ -7,7 +7,7 @@
 # Run after Kafka is up and healthy
 # ============================================================================
 
-set -e  # Exit on any error
+# Note: Not using 'set -e' to allow continuing after warnings
 
 # Colors for output
 RED='\033[0;31m'

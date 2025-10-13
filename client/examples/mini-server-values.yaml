@@ -1,0 +1,49 @@
+# Configuration for connecting to KGroot Mini-Server
+# Perfect for development and testing
+
+global:
+  clusterName: "dev-minikube"
+
+server:
+  kafka:
+    # Replace with your mini-server public IP
+    brokers: "ec2-54-123-45-67.compute.amazonaws.com:9092"
+    # Mini-server has no authentication by default
+    sasl:
+      enabled: false
+    tls:
+      enabled: false
+
+# Collect all log levels for development
+vector:
+  enabled: true
+  logCollection:
+    levels:
+      - ERROR
+      - FATAL
+      - WARN
+      - INFO
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Event exporter - minimal resources
+eventExporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+namespace: "kgroot-client"
+createNamespace: true

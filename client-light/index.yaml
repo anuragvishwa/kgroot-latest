@@ -1,0 +1,72 @@
+apiVersion: v1
+entries:
+  kg-rca-agent:
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: added
+          description: Initial production release of KG RCA Agent
+        - kind: added
+          description: Kubernetes event collection with real-time streaming
+        - kind: added
+          description: Pod log aggregation with Vector
+        - kind: added
+          description: SSL/TLS support for secure Kafka communication
+        - kind: added
+          description: Configurable resource limits and requests
+        - kind: added
+          description: RBAC with minimal required permissions
+        - kind: added
+          description: Multi-namespace and cluster-wide monitoring support
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/displayName: KG RCA Agent by Lumniverse
+      artifacthub.io/images: |
+        - name: event-exporter
+          image: anuragvishwa/kg-event-exporter:1.0.1
+        - name: vector
+          image: timberio/vector:0.31.0-alpine
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://github.com/anuragvishwa/kgroot-latest/blob/main/README.md
+        - name: Support
+          url: https://github.com/anuragvishwa/kgroot-latest/issues
+        - name: Website
+          url: https://lumniverse.com
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/recommendations: |
+        - url: https://kafka.apache.org/
+      artifacthub.io/signKey: |
+        fingerprint: # Add GPG key fingerprint if signing releases
+        url: # Add GPG public key URL if signing releases
+    apiVersion: v2
+    appVersion: 1.0.1
+    created: "2025-10-13T19:24:28.612031+05:30"
+    description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
+      observability and root cause analysis
+    digest: 5d2a6f9fcd495e52cb8e6793ae84b6c0101b8bc798392ef44c2f751cb47e76fb
+    home: https://github.com/anuragvishwa/kgroot-latest
+    icon: https://raw.githubusercontent.com/anuragvishwa/kgroot-latest/main/assets/logo.png
+    keywords:
+    - knowledge-graph
+    - rca
+    - observability
+    - agent
+    - monitoring
+    - kubernetes
+    - troubleshooting
+    - root-cause-analysis
+    - lumniverse
+    maintainers:
+    - email: support@lumniverse.com
+      name: Lumniverse
+      url: https://github.com/anuragvishwa
+    name: kg-rca-agent
+    sources:
+    - https://github.com/anuragvishwa/kgroot-latest
+    type: application
+    urls:
+    - https://github.com/anuragvishwa/kgroot-latest/releases/download/v1.0.2/kg-rca-agent-1.0.1.tgz
+    version: 1.0.1
+generated: "2025-10-13T19:24:28.610095+05:30"

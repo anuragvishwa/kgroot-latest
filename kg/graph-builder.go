@@ -1352,6 +1352,20 @@ func main() {
 		}
 	}()
 
+	// Start metrics server
+	metricsAddr := getenv("METRICS_PORT", "9090")
+	if metricsAddr != "" {
+		if !strings.Contains(metricsAddr, ":") {
+			metricsAddr = ":" + metricsAddr
+		}
+		go func() {
+			log.Printf("starting metrics server on %s", metricsAddr)
+			if err := StartMetricsServer(metricsAddr); err != nil {
+				log.Printf("metrics server error: %v", err)
+			}
+		}()
+	}
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() { <-sig; cancel() }()

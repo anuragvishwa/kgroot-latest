@@ -67,23 +67,23 @@ if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
         jq
 elif [[ "$OS" == "amzn" ]] || [[ "$OS" == "rhel" ]] || [[ "$OS" == "centos" ]]; then
     # Amazon Linux 2023 / RHEL / CentOS
+    # Skip curl since curl-minimal is usually already installed
     sudo dnf install -y \
         nginx \
         git \
-        curl \
         wget \
         htop \
         jq \
-        python3-pip || sudo yum install -y \
+        python3-pip 2>/dev/null || sudo yum install -y \
         nginx \
         git \
-        curl \
         wget \
         htop \
         jq \
         python3-pip
 
     # Install certbot via pip for Amazon Linux
+    sudo python3 -m pip install --break-system-packages certbot certbot-nginx 2>/dev/null || \
     sudo python3 -m pip install certbot certbot-nginx
 fi
 

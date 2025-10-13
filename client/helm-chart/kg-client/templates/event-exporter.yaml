@@ -1,0 +1,77 @@
+{{- if .Values.eventExporter.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kg-client.fullname" . }}-event-exporter
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kg-client.labels" . | nindent 4 }}
+    app.kubernetes.io/component: event-exporter
+data:
+  config.yaml: |
+    logLevel: info
+    logFormat: json
+    route:
+      routes:
+        - match:
+            - receiver: "kafka"
+    receivers:
+      - name: "kafka"
+        kafka:
+          brokers:
+            - {{ .Values.server.kafka.brokers | quote }}
+          topic: {{ .Values.eventExporter.topic | quote }}
+          {{- if .Values.server.kafka.sasl.enabled }}
+          sasl:
+            enabled: true
+            mechanism: {{ .Values.server.kafka.sasl.mechanism | quote }}
+            username: {{ .Values.server.kafka.sasl.username | quote }}
+            password: {{ .Values.server.kafka.sasl.password | quote }}
+          {{- end }}
+          {{- if .Values.server.kafka.tls.enabled }}
+          tls:
+            enabled: true
+          {{- end }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kg-client.fullname" . }}-event-exporter
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kg-client.labels" . | nindent 4 }}
+    app.kubernetes.io/component: event-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kg-client.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: event-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "kg-client.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: event-exporter
+    spec:
+      serviceAccountName: {{ include "kg-client.serviceAccountName" . }}
+      containers:
+        - name: event-exporter
+          image: "{{ .Values.eventExporter.image.repository }}:{{ .Values.eventExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.eventExporter.image.pullPolicy }}
+          args:
+            - -conf=/config/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /config
+          resources:
+            {{- toYaml .Values.eventExporter.resources | nindent 12 }}
+          env:
+            - name: CLUSTER_NAME
+              value: {{ .Values.global.clusterName | quote }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kg-client.fullname" . }}-event-exporter
+{{- end }}

@@ -1,0 +1,96 @@
+{{- if .Values.vector.enabled }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "kg-client.fullname" . }}-vector
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kg-client.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vector
+spec:
+  selector:
+    matchLabels:
+      {{- include "kg-client.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vector
+  template:
+    metadata:
+      labels:
+        {{- include "kg-client.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vector
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/vector-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "kg-client.serviceAccountName" . }}
+      containers:
+        - name: vector
+          image: "{{ .Values.vector.image.repository }}:{{ .Values.vector.image.tag }}"
+          imagePullPolicy: {{ .Values.vector.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/vector/vector.yaml
+          ports:
+            - name: webhook
+              containerPort: {{ .Values.vector.alertWebhook.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+            - name: var-log
+              mountPath: /var/log
+              readOnly: true
+            - name: var-lib
+              mountPath: /var/lib
+              readOnly: true
+          resources:
+            {{- toYaml .Values.vector.resources | nindent 12 }}
+          env:
+            - name: VECTOR_SELF_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: VECTOR_SELF_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: VECTOR_SELF_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kg-client.fullname" . }}-vector
+        - name: var-log
+          hostPath:
+            path: /var/log
+        - name: var-lib
+          hostPath:
+            path: /var/lib
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+
+---
+{{- if .Values.vector.alertWebhook.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kg-client.fullname" . }}-vector
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kg-client.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vector
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.vector.alertWebhook.port }}
+      targetPort: webhook
+      protocol: TCP
+      name: webhook
+  selector:
+    {{- include "kg-client.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: vector
+{{- end }}
+{{- end }}

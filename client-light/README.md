@@ -5,6 +5,7 @@ Lightweight Kubernetes agent that streams events, logs, and resource state to th
 ## What It Does
 
 Installs these components in your Kubernetes cluster:
+
 - **Vector DaemonSet**: Collects and normalizes pod logs
 - **Event Exporter**: Captures Kubernetes events (pod crashes, scheduling issues, etc.)
 - **State Watcher**: Monitors resource state and topology changes
@@ -24,6 +25,7 @@ All data is sent to your KG RCA Server via Kafka.
 ### 1. Get Server Connection Details
 
 From your KG RCA Server administrator, get:
+
 - **Kafka Bootstrap Server**: `kafka.yourcompany.com:9092` (or IP:port)
 - **Client ID**: Unique identifier for your cluster (e.g., `prod-us-west-2`)
 - **API Key**: Authentication token (if required)
@@ -42,7 +44,7 @@ client:
   # Kafka connection
   kafka:
     # Replace with your server's Kafka endpoint
-    bootstrapServers: "3.93.235.47:9092"
+    bootstrapServers: "98.90.147.12:9092"
 
     # For SSL (production):
     # bootstrapServers: "kafka.yourcompany.com:9093"
@@ -170,22 +172,26 @@ stateWatcher:
 ### Component Details
 
 #### Vector (Log Collection)
+
 - Runs as DaemonSet on every node
 - Collects logs from all pods (or specified namespaces)
 - Normalizes log format
 - Sends to: `events.normalized` Kafka topic
 
 #### Event Exporter
+
 - Watches Kubernetes Event API
 - Captures pod failures, scheduling issues, etc.
 - Sends to: `events.normalized` Kafka topic
 
 #### State Watcher
+
 - Monitors resource state (Pod, Deployment, Service, etc.)
 - Tracks topology relationships
 - Sends to: `state.k8s.resource` and `state.k8s.topology` topics
 
 #### Prometheus Agent (Optional)
+
 - Scrapes metrics from your cluster
 - Forwards to server's Prometheus
 - Enables metric-based alerting
@@ -241,11 +247,11 @@ kubectl delete namespace observability
 
 Typical resource consumption per node:
 
-| Component | CPU (avg) | Memory (avg) | Notes |
-|-----------|-----------|--------------|-------|
-| Vector | 50-100m | 128-256Mi | Per node (DaemonSet) |
-| Event Exporter | 10-50m | 64-128Mi | Single replica |
-| State Watcher | 50-100m | 128-256Mi | Single replica |
+| Component      | CPU (avg) | Memory (avg) | Notes                |
+| -------------- | --------- | ------------ | -------------------- |
+| Vector         | 50-100m   | 128-256Mi    | Per node (DaemonSet) |
+| Event Exporter | 10-50m    | 64-128Mi     | Single replica       |
+| State Watcher  | 50-100m   | 128-256Mi    | Single replica       |
 
 **Total per cluster**: ~200-500m CPU, ~400-800Mi memory
 

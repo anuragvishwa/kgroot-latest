@@ -16,7 +16,7 @@ client:
   # Kafka connection to KG RCA Server
   kafka:
     # OPTION 1: Plaintext connection (testing/internal networks)
-    bootstrapServers: "3.93.235.47:9092"
+    bootstrapServers: "98.90.147.12:9092"
 
     # OPTION 2: SSL connection (production)
     # bootstrapServers: "kafka.lumniverse.com:9093"
@@ -88,7 +88,7 @@ stateWatcher:
 # Prometheus Agent - Metrics (Optional)
 # ============================================================================
 prometheusAgent:
-  enabled: false  # Set to true if you want metrics collection
+  enabled: false # Set to true if you want metrics collection
 
   # Server endpoint (if enabled)
   # remoteWrite:
@@ -101,7 +101,6 @@ prometheusAgent:
     limits:
       cpu: 1000m
       memory: 2Gi
-
 # ============================================================================
 # Advanced Configuration
 # ============================================================================

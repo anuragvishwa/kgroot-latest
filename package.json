@@ -5,13 +5,15 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:api": "tsc -p api/tsconfig.json",
     "dev:updater": "tsx services/updater/index.ts",
     "sim:replay": "tsx services/simulator/replay.ts",
     "cli:build-fekg": "tsx services/cli/build-fekg.ts 0.5",
     "cli:build-fekg-ctx": "tsx services/cli/build-fekg-context.ts",
     "cli:push-fekg": "tsx services/cli/push-fekg-to-neo4j.ts",
     "cli:fault:upsert": "tsx services/cli/push-fekg-to-neo4j.ts",
-    "cli:embed-abstracts": "tsx services/cli/embed-abstracts.ts"
+    "cli:embed-abstracts": "tsx services/cli/embed-abstracts.ts",
+    "dev:api": "tsx api/src/server.ts"
   },
   "dependencies": {
     "@kafkajs/zstd": "^0.1.1",
@@ -26,6 +28,7 @@
     "yargs": "^18.0.0"
   },
   "devDependencies": {
+    "@types/node": "^22.10.1",
     "@types/yargs": "^17.0.33",
     "ts-node": "^10.9.2",
     "tsx": "^4.15.7",

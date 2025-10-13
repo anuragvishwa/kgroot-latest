@@ -1,0 +1,8 @@
+# Minimal configuration - just change these two values
+
+global:
+  clusterName: "my-cluster"  # REQUIRED: Name your cluster
+
+server:
+  kafka:
+    brokers: "54.123.45.67:9092"  # REQUIRED: Your server IP:9092

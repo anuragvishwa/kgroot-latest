@@ -2,12 +2,84 @@
 
 Quick guide to test the KG RCA Agent installation on your Kubernetes cluster.
 
+## Pre-Flight: Test Server Connectivity FIRST
+
+**Before installing anything**, verify you can reach the KG RCA Server:
+
+```bash
+# Set your server IP (use the Elastic IP!)
+SERVER_IP="98.90.147.12"
+
+# Test 1: Basic ping (may timeout on AWS - that's OK!)
+ping -c 3 $SERVER_IP
+# Note: AWS often blocks ICMP, so timeout is normal
+
+# Test 2: Check Kafka port (9092) - THIS IS THE CRITICAL TEST
+nc -zv $SERVER_IP 9092
+# Expected: "succeeded!" or "open"
+
+# Test 3: Check if port is open (alternative method)
+timeout 5 bash -c "</dev/tcp/$SERVER_IP/9092" && echo "✅ Kafka port 9092 is reachable" || echo "❌ Cannot connect to Kafka port 9092"
+
+# Test 4: Check KG API port (if exposed)
+curl -s http://$SERVER_IP:8080/api/v1/graph/stats || echo "API not accessible (may be normal if not exposed)"
+
+# Test 5: From inside your Kubernetes cluster
+kubectl run test-connectivity --image=busybox --rm -it --restart=Never -- \
+  sh -c "nc -zv $SERVER_IP 9092 && echo 'SUCCESS' || echo 'FAILED'"
+```
+
+### Expected Results
+
+✅ **Good to proceed:**
+
+- Ping succeeds (shows server is online)
+- Port 9092 shows "succeeded" or "open"
+- Kubernetes pod can reach the server
+
+❌ **Don't proceed yet - troubleshoot first:**
+
+- Connection timeout
+- Connection refused
+- "No route to host"
+
+### Common Connectivity Issues
+
+**Issue: Connection timeout**
+
+```bash
+# Check if AWS security group allows your IP
+# Go to AWS Console → EC2 → Security Groups
+# The server's security group should allow:
+# - Port 9092 (Kafka) from your cluster's egress IPs
+# - Port 22 (SSH) from your IP for management
+```
+
+**Issue: Connection refused**
+
+```bash
+# Check if Kafka is actually running on server
+ssh -i your-key.pem ec2-user@$SERVER_IP "docker ps | grep kafka"
+
+# Check if Kafka is listening on correct interface
+ssh -i your-key.pem ec2-user@$SERVER_IP "docker exec kg-kafka ss -tlnp | grep 9092"
+```
+
+**Issue: From Kubernetes pod but not from local machine**
+
+- This is normal if your cluster has different egress IPs
+- Ensure server security group allows cluster's NAT gateway IPs
+
+---
+
 ## Test Environment Setup
 
 You'll need:
+
 - A Kubernetes cluster (can be Minikube, kind, or real cluster)
 - KG RCA Server running and accessible
 - kubectl and Helm installed
+- **✅ Server connectivity verified** (see above)
 
 ## Option 1: Test on Minikube (Local)
 
@@ -19,7 +91,7 @@ minikube start --cpus=4 --memory=8192
 kubectl cluster-info
 
 # Set server IP (your mini-server)
-SERVER_IP="3.93.235.47"
+SERVER_IP="98.90.147.12"
 
 # Create test values
 cat > test-values.yaml <<EOF
@@ -59,7 +131,7 @@ cat > prod-test-values.yaml <<EOF
 client:
   id: "test-prod-cluster"
   kafka:
-    bootstrapServers: "3.93.235.47:9092"  # Replace with your server
+    bootstrapServers: "98.90.147.12:9092"  # Replace with your server
 
 # Optional: limit to specific namespaces for testing
 monitoredNamespaces: ["default", "test"]
@@ -164,6 +236,7 @@ kubectl logs -n observability <pod-name> --previous
 ```
 
 Common causes:
+
 - Wrong Kafka bootstrap server address
 - Network policy blocking egress
 - Insufficient resources
@@ -174,7 +247,7 @@ Common causes:
 # Test network connectivity from Vector pod
 kubectl exec -n observability -it \
   $(kubectl get pod -n observability -l app=vector -o name | head -1) \
-  -- sh -c "nc -zv 3.93.235.47 9092"
+  -- sh -c "nc -zv 98.90.147.12 9092"
 
 # Check if Kafka topic exists on server
 ssh your-server "docker exec kg-kafka kafka-topics.sh --bootstrap-server localhost:9092 --list | grep normalized"

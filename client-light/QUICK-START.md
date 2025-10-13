@@ -5,7 +5,8 @@ Install KG RCA Agent in your Kubernetes cluster in 5 minutes.
 ## Step 1: Get Server Details
 
 Contact your KG RCA Server administrator for:
-- Kafka server address (e.g., `3.93.235.47:9092`)
+
+- Kafka server address (e.g., `98.90.147.12:9092`)
 - Your unique client ID
 
 ## Step 2: Create Configuration
@@ -15,13 +16,14 @@ cat > values.yaml <<EOF
 client:
   id: "my-cluster"
   kafka:
-    bootstrapServers: "3.93.235.47:9092"
+    bootstrapServers: "98.90.147.12:9092"
 EOF
 ```
 
 Replace:
+
 - `my-cluster` with your cluster name (e.g., `prod-us-west`)
-- `3.93.235.47:9092` with your server's Kafka endpoint
+- `98.90.147.12:9092` with your server's Kafka endpoint
 
 ## Step 3: Install
 
@@ -39,6 +41,7 @@ kubectl get pods -n observability
 ```
 
 You should see 3 pods running:
+
 - `kg-rca-agent-vector-xxxxx`
 - `kg-rca-agent-event-exporter-xxxxx`
 - `kg-rca-agent-state-watcher-xxxxx`
@@ -66,6 +69,7 @@ Your cluster is now streaming data to the KG RCA Server for real-time root cause
 ## Troubleshooting
 
 **Pods not starting?**
+
 ```bash
 kubectl describe pod -n observability <pod-name>
 kubectl logs -n observability <pod-name>
@@ -73,8 +77,9 @@ kubectl logs -n observability <pod-name>
 
 **No data on server?**
 Check network connectivity:
+
 ```bash
-kubectl exec -n observability -it <vector-pod> -- nc -zv 3.93.235.47 9092
+kubectl exec -n observability -it <vector-pod> -- nc -zv 98.90.147.12 9092
 ```
 
 **Need help?** Email support@lumniverse.com

@@ -1,0 +1,17 @@
+apiVersion: v2
+name: kg-client
+description: KGroot Kubernetes Client - Observability data collector for KGroot Knowledge Graph
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - observability
+  - kubernetes
+  - knowledge-graph
+  - rca
+  - monitoring
+maintainers:
+  - name: KGroot Team
+home: https://github.com/yourusername/kgroot
+sources:
+  - https://github.com/yourusername/kgroot
