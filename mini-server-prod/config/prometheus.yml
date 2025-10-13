@@ -1,0 +1,95 @@
+# Prometheus Configuration for KG RCA Platform
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'kg-rca-prod'
+    environment: 'production'
+
+# Alertmanager configuration (optional - configure if you set up alerting)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+# rule_files:
+#   - "alerts/*.yml"
+
+scrape_configs:
+  # ============================================================================
+  # Prometheus itself
+  # ============================================================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # ============================================================================
+  # Graph Builder metrics
+  # ============================================================================
+  - job_name: 'graph-builder'
+    static_configs:
+      - targets: ['graph-builder:9090']
+        labels:
+          service: 'graph-builder'
+          component: 'core'
+    scrape_interval: 10s
+    scrape_timeout: 10s
+
+  # ============================================================================
+  # Neo4j metrics (requires Neo4j metrics endpoint)
+  # ============================================================================
+  - job_name: 'neo4j'
+    static_configs:
+      - targets: ['neo4j:2004']
+        labels:
+          service: 'neo4j'
+          component: 'database'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # ============================================================================
+  # KG API metrics (if your API exposes metrics)
+  # ============================================================================
+  - job_name: 'kg-api'
+    static_configs:
+      - targets: ['kg-api:8080']
+        labels:
+          service: 'kg-api'
+          component: 'api'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # ============================================================================
+  # Kafka exporter (optional - uncomment if you deploy kafka-exporter)
+  # ============================================================================
+  # - job_name: 'kafka'
+  #   static_configs:
+  #     - targets: ['kafka-exporter:9308']
+  #       labels:
+  #         service: 'kafka'
+  #         component: 'messaging'
+
+  # ============================================================================
+  # Node exporter (optional - for system metrics)
+  # ============================================================================
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['node-exporter:9100']
+  #       labels:
+  #         service: 'node-exporter'
+  #         component: 'system'
+
+  # ============================================================================
+  # cAdvisor (optional - for container metrics)
+  # ============================================================================
+  # - job_name: 'cadvisor'
+  #   static_configs:
+  #     - targets: ['cadvisor:8080']
+  #       labels:
+  #         service: 'cadvisor'
+  #         component: 'containers'

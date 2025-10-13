@@ -1,0 +1,329 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # ZOOKEEPER - Kafka coordination service
+  # ============================================================================
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    container_name: kg-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/data
+      - zookeeper-logs:/datalog
+    restart: unless-stopped
+    networks:
+      - kg-network
+
+  # ============================================================================
+  # KAFKA - Message broker (Plaintext for internal Docker network)
+  # ============================================================================
+  kafka:
+    image: wurstmeister/kafka:latest
+    container_name: kg-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"  # Internal Docker network
+      - "9093:9093"  # External SSL (configure in docker-compose.ssl.yml)
+    environment:
+      # Kafka broker ID
+      KAFKA_BROKER_ID: 1
+
+      # Zookeeper connection
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # Listeners - PLAINTEXT for internal Docker network
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Topic defaults
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Performance tuning
+      KAFKA_COMPRESSION_TYPE: gzip
+      KAFKA_LOG_RETENTION_HOURS: 168  # 7 days
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824  # 1GB
+
+      # Memory settings
+      KAFKA_HEAP_OPTS: "-Xmx2G -Xms1G"
+    volumes:
+      - kafka-data:/kafka
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - kg-network
+
+  # ============================================================================
+  # KAFKA UI - Web interface for Kafka management
+  # ============================================================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kg-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "7777:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: kg-prod
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      DYNAMIC_CONFIG_ENABLED: "true"
+    restart: unless-stopped
+    networks:
+      - kg-network
+
+  # ============================================================================
+  # NEO4J - Graph database
+  # ============================================================================
+  neo4j:
+    image: neo4j:5.20
+    container_name: kg-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-anuragvishwa}
+      NEO4J_PLUGINS: '["apoc"]'
+
+      # Memory settings (adjust based on your server)
+      NEO4J_server_memory_heap_max__size: 4G
+      NEO4J_server_memory_heap_initial__size: 2G
+      NEO4J_server_memory_pagecache_size: 2G
+
+      # Transaction memory limits
+      NEO4J_db_memory_transaction_total_max: 4G
+      NEO4J_db_memory_transaction_max: 2G
+
+      # APOC configuration
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+
+      # Performance tuning
+      NEO4J_dbms_checkpoint_interval_time: 15m
+      NEO4J_dbms_checkpoint_interval_tx: 100000
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+      - neo4j-metrics:/metrics
+      - neo4j-plugins:/plugins
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-anuragvishwa}", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - kg-network
+
+  # ============================================================================
+  # ALERTS ENRICHER - Enriches raw events with state information
+  # ============================================================================
+  alerts-enricher:
+    build:
+      context: ../alerts-enricher
+      dockerfile: Dockerfile
+    container_name: kg-alerts-enricher
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      # Kafka configuration
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP: alerts-enricher
+
+      # Topics
+      INPUT_TOPIC: events.normalized
+      OUTPUT_TOPIC: alerts.enriched
+      STATE_RESOURCE_TOPIC: state.k8s.resource
+      STATE_TOPOLOGY_TOPIC: state.k8s.topology
+
+      # Processing settings
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    restart: unless-stopped
+    networks:
+      - kg-network
+
+  # ============================================================================
+  # GRAPH BUILDER - Builds knowledge graph from enriched events
+  # ============================================================================
+  graph-builder:
+    build:
+      context: ../kg
+      dockerfile: Dockerfile
+    container_name: kg-graph-builder
+    depends_on:
+      kafka:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    ports:
+      - "9090:9090"  # Prometheus metrics
+    environment:
+      # Kafka configuration
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP: kg-builder
+
+      # Neo4j configuration
+      NEO4J_URI: neo4j://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASS: ${NEO4J_PASSWORD:-anuragvishwa}
+
+      # Topics
+      TOPIC_LOGS: logs.normalized
+      TOPIC_EVENTS: events.normalized
+      TOPIC_ALERTS: alerts.enriched
+
+      # RCA configuration
+      RCA_WINDOW_MIN: "15"
+      SEVERITY_ESCALATION_ENABLED: "true"
+      SEVERITY_ESCALATION_WINDOW_MIN: "5"
+      SEVERITY_ESCALATION_THRESHOLD: "3"
+      INCIDENT_CLUSTERING_ENABLED: "true"
+      ANOMALY_DETECTION_ENABLED: "true"
+
+      # Metrics
+      METRICS_PORT: "9090"
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - kg-network
+
+  # ============================================================================
+  # KG API - REST API for knowledge graph queries
+  # ============================================================================
+  kg-api:
+    build:
+      context: ../kg-api
+      dockerfile: Dockerfile
+    container_name: kg-api
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      # Neo4j configuration
+      NEO4J_URI: neo4j://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASS: ${NEO4J_PASSWORD:-anuragvishwa}
+
+      # API configuration
+      PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # Security (set in production)
+      API_KEY: ${KG_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - kg-network
+
+  # ============================================================================
+  # PROMETHEUS - Metrics collection
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kg-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    depends_on:
+      - graph-builder
+    restart: unless-stopped
+    networks:
+      - kg-network
+
+  # ============================================================================
+  # GRAFANA - Metrics visualization
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kg-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_PLUGINS_ENABLE_ALPHA: "true"
+      GF_INSTALL_PLUGINS: "redis-datasource,grafana-neo4j-datasource"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - prometheus
+      - neo4j
+    restart: unless-stopped
+    networks:
+      - kg-network
+
+# ============================================================================
+# VOLUMES - Persistent data storage
+# ============================================================================
+volumes:
+  zookeeper-data:
+    driver: local
+  zookeeper-logs:
+    driver: local
+  kafka-data:
+    driver: local
+  neo4j-data:
+    driver: local
+  neo4j-logs:
+    driver: local
+  neo4j-metrics:
+    driver: local
+  neo4j-plugins:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  kg-network:
+    driver: bridge

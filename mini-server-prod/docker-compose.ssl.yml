@@ -1,0 +1,51 @@
+version: '3.8'
+
+# ============================================================================
+# KG RCA Mini Server - SSL/TLS Configuration Override
+# ============================================================================
+# This file extends docker-compose.yml to add SSL support for Kafka
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+# ============================================================================
+
+services:
+  # ============================================================================
+  # KAFKA - Message broker with SSL enabled
+  # ============================================================================
+  kafka:
+    ports:
+      - "9092:9092"  # Internal plaintext (Docker network)
+      - "9093:9093"  # External SSL (client connections)
+    environment:
+      # Override listener configuration for SSL
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,SSL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,SSL://${KAFKA_ADVERTISED_HOST}:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,SSL:SSL
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # SSL Configuration
+      KAFKA_SSL_KEYSTORE_LOCATION: ${KAFKA_SSL_KEYSTORE_LOCATION}
+      KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_SSL_KEYSTORE_PASSWORD}
+      KAFKA_SSL_KEY_PASSWORD: ${KAFKA_SSL_KEY_PASSWORD}
+      KAFKA_SSL_TRUSTSTORE_LOCATION: ${KAFKA_SSL_TRUSTSTORE_LOCATION}
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
+
+      # SSL protocol settings
+      KAFKA_SSL_PROTOCOL: TLSv1.2
+      KAFKA_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      KAFKA_SSL_CLIENT_AUTH: none  # Change to 'required' for mutual TLS
+
+      # SSL cipher suites (optional, for enhanced security)
+      # KAFKA_SSL_CIPHER_SUITES: TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+
+    volumes:
+      - kafka-data:/kafka
+      - ./ssl:/ssl:ro  # Mount SSL certificates
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# 1. Generate SSL certificates before using this file (see scripts/setup-ssl.sh)
+# 2. Update .env with your server's hostname and SSL passwords
+# 3. Open port 9093 in your firewall for external access
+# 4. Client connections should use SSL://your-server:9093
+# 5. Internal services continue using PLAINTEXT://kafka:9092

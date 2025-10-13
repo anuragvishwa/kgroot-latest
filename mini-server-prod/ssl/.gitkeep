@@ -1,0 +1,6 @@
+# SSL certificates will be generated here by setup-ssl.sh
+# This directory should contain:
+# - kafka.keystore.jks
+# - kafka.truststore.jks
+# - ca-cert (CA certificate for clients)
+# - client certificates (if using mutual TLS)
