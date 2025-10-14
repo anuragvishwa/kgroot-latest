@@ -11,16 +11,16 @@ metadata:
 data:
   vector.toml: |
     # Data directory
-    data_dir = "/var/lib/vector"
+    data_dir = "/vector-data"
 
     # ─────────────────────────────────────────────────────────────────────────
     # Sources - Kubernetes Logs
     # ─────────────────────────────────────────────────────────────────────────
     [sources.kubernetes_logs]
     type = "kubernetes_logs"
-    {{- if .Values.vector.config.sources.kubernetes_logs.exclude_paths_glob_patterns }}
-    exclude_paths_glob_patterns = {{ toJson .Values.vector.config.sources.kubernetes_logs.exclude_paths_glob_patterns }}
-    {{- end }}
+    # Vector requires the node name when running as a DaemonSet
+    # to scope log collection to the current node.
+    self_node_name = "${VECTOR_SELF_NODE_NAME}"
 
     # ─────────────────────────────────────────────────────────────────────────
     # Transforms - Add Client Metadata
@@ -86,17 +86,27 @@ spec:
       hostNetwork: false
       dnsPolicy: ClusterFirst
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
-        fsGroup: 65534
+        runAsNonRoot: false
+        runAsUser: 0
+        fsGroup: 0
       containers:
         - name: vector
           image: "{{ .Values.vector.image.repository }}:{{ .Values.vector.image.tag }}"
           imagePullPolicy: {{ .Values.vector.image.pullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: false
+            privileged: false
+            allowPrivilegeEscalation: false
           args:
             - "--config"
             - "/etc/vector/vector.toml"
+            - "--verbose"
           env:
+            # Node identity for kubernetes_logs source
+            - name: VECTOR_SELF_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             {{- if .Values.client.kafka.sasl.enabled }}
             # Kafka SASL Credentials from Secret
             - name: KAFKA_SASL_USERNAME
@@ -123,7 +133,7 @@ spec:
               mountPath: /var/lib
               readOnly: true
             - name: data
-              mountPath: /var/lib/vector
+              mountPath: /vector-data
       volumes:
         - name: config
           configMap:
