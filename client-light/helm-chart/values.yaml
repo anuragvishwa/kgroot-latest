@@ -47,8 +47,8 @@ stateWatcher:
 
   env:
     KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
-    KAFKA_TOPIC_RESOURCE: "{{ .client.id }}.state.k8s.resource"
-    KAFKA_TOPIC_TOPOLOGY: "{{ .client.id }}.state.k8s.topology"
+    KAFKA_TOPIC_RESOURCE: "state.k8s.resource"
+    KAFKA_TOPIC_TOPOLOGY: "state.k8s.topology"
     WATCH_NAMESPACES: ""  # Populated from client.monitoredNamespaces
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -93,9 +93,11 @@ vector:
         type: kafka
         inputs: ["normalize"]
         bootstrap_servers: ""  # Populated from client.kafka.brokers
-        topic: "{{ .client.id }}.logs.normalized"
+        topic: ""  # Set via vector.kafkaTopic; default resolves to logs.normalized
         encoding:
           codec: json
+  # Optional override for logs topic (default: logs.normalized)
+  kafkaTopic: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # Event Exporter - Kubernetes Events
@@ -126,7 +128,10 @@ eventExporter:
       - name: kafka
         kafka:
           brokers: []  # Populated from client.kafka.brokers
-          topic: "{{ .client.id }}.events.normalized"
+          topic: ""  # Set via eventExporter.kafkaTopic; default resolves to events.normalized
+
+  # Optional override for events topic (default: events.normalized)
+  kafkaTopic: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # Prometheus Agent - Metrics Collection
@@ -191,8 +196,14 @@ alertReceiver:
 
   env:
     KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
-    KAFKA_TOPIC: "{{ .client.id }}.alerts.raw"
+    KAFKA_TOPIC: "alerts.raw"
     CLIENT_ID: ""  # Populated from client.id
+
+# Explicit topic overrides for templates
+stateWatcher:
+  topicResource: ""
+  topicTopology: ""
+  topicPromTargets: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # RBAC - Service Account and Permissions

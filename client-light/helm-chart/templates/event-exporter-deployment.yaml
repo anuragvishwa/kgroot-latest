@@ -21,7 +21,9 @@ data:
         kafka:
           brokers:
             - {{ .Values.client.kafka.brokers | quote }}
-          topic: {{ printf "%s.events.normalized" .Values.client.id | quote }}
+          {{- $defaultEvents := printf "events.normalized" -}}
+          {{- $topicEvents := default $defaultEvents .Values.eventExporter.kafkaTopic -}}
+          topic: {{ $topicEvents | quote }}
           {{- if .Values.client.kafka.sasl.enabled }}
           sasl:
             enabled: true
@@ -98,22 +100,6 @@ spec:
             - name: config
               mountPath: /config
               readOnly: true
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 2112
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 2112
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
       volumes:
         - name: config
           configMap:
