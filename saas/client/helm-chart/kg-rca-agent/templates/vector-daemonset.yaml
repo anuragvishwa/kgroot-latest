@@ -21,6 +21,9 @@ data:
     {{- if .Values.vector.config.sources.kubernetes_logs.exclude_paths_glob_patterns }}
     exclude_paths_glob_patterns = {{ toJson .Values.vector.config.sources.kubernetes_logs.exclude_paths_glob_patterns }}
     {{- end }}
+    # Vector requires the node name when running as a DaemonSet
+    # to scope log collection to the current node.
+    self_node_name = "${VECTOR_SELF_NODE_NAME}"
 
     # ─────────────────────────────────────────────────────────────────────────
     # Transforms - Add Client Metadata
@@ -97,6 +100,11 @@ spec:
             - "--config"
             - "/etc/vector/vector.toml"
           env:
+            # Node identity for kubernetes_logs source
+            - name: VECTOR_SELF_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             {{- if .Values.client.kafka.sasl.enabled }}
             # Kafka SASL Credentials from Secret
             - name: KAFKA_SASL_USERNAME

@@ -204,7 +204,7 @@ rbac:
   clusterRole:
     rules:
       - apiGroups: [""]
-        resources: ["pods", "services", "endpoints", "nodes", "events"]
+        resources: ["pods", "services", "endpoints", "nodes", "events", "namespaces"]
         verbs: ["get", "list", "watch"]
       - apiGroups: ["apps"]
         resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]

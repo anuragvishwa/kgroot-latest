@@ -31,9 +31,9 @@ client:
 stateWatcher:
   enabled: true
   image:
-    repository: kg-rca/state-watcher
-    tag: "latest"
-    pullPolicy: Always
+    repository: anuragvishwa/kg-state-watcher
+    tag: "1.0.2"
+    pullPolicy: IfNotPresent
 
   replicaCount: 1
 
@@ -104,7 +104,7 @@ eventExporter:
   enabled: true
   image:
     repository: opsgenie/kubernetes-event-exporter
-    tag: "v1.4"
+    tag: "latest"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -175,9 +175,9 @@ prometheusAgent:
 alertReceiver:
   enabled: true
   image:
-    repository: kg-rca/alert-receiver
-    tag: "latest"
-    pullPolicy: Always
+    repository: anuragvishwa/kg-alert-receiver
+    tag: "1.0.2"
+    pullPolicy: IfNotPresent
 
   replicaCount: 2
 
@@ -204,7 +204,7 @@ rbac:
   clusterRole:
     rules:
       - apiGroups: [""]
-        resources: ["pods", "services", "endpoints", "nodes", "events"]
+        resources: ["pods", "services", "endpoints", "nodes", "events", "namespaces"]
         verbs: ["get", "list", "watch"]
       - apiGroups: ["apps"]
         resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]

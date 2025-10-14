@@ -2,8 +2,8 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.2
-appVersion: "1.0.2"
+version: 1.0.3
+appVersion: "1.0.3"
 keywords:
   - knowledge-graph
   - rca
@@ -52,12 +52,20 @@ annotations:
       description: RBAC with minimal required permissions
     - kind: added
       description: Multi-namespace and cluster-wide monitoring support
+    - kind: fixed
+      description: Fix Vector DaemonSet crash by setting self_node_name and VECTOR_SELF_NODE_NAME; add RBAC to list namespaces
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/signKey: |
     fingerprint: # Add GPG key fingerprint if signing releases
     url: # Add GPG public key URL if signing releases
   artifacthub.io/images: |
+    - name: alert-receiver
+      image: anuragvishwa/kg-alert-receiver:1.0.2
+    - name: state-watcher
+      image: anuragvishwa/kg-state-watcher:1.0.2
     - name: event-exporter
-      image: anuragvishwa/kg-event-exporter:1.0.1
+      image: opsgenie/kubernetes-event-exporter:v1.4
     - name: vector
-      image: timberio/vector:0.31.0-alpine
+      image: timberio/vector:0.34.0-alpine
+    - name: prometheus
+      image: prom/prometheus:latest
