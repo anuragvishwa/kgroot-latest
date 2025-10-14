@@ -14,7 +14,10 @@ data:
 
   # Kafka Configuration
   KAFKA_BROKERS: {{ .Values.client.kafka.brokers | quote }}
+  KAFKA_BOOTSTRAP: {{ .Values.client.kafka.brokers | quote }}
   KAFKA_SASL_ENABLED: {{ .Values.client.kafka.sasl.enabled | quote }}
+  CLUSTER_NAME: {{ .Values.client.id | quote }}
+  KAFKA_CLIENT_ID: "state-watcher"
 
   # Monitoring Configuration
   {{- if .Values.client.monitoredNamespaces }}
@@ -24,8 +27,26 @@ data:
   {{- end }}
 
   # Kafka Topics (templated with client ID)
-  KAFKA_TOPIC_RESOURCE: {{ printf "%s.state.k8s.resource" .Values.client.id | quote }}
-  KAFKA_TOPIC_TOPOLOGY: {{ printf "%s.state.k8s.topology" .Values.client.id | quote }}
-  KAFKA_TOPIC_LOGS: {{ printf "%s.logs.normalized" .Values.client.id | quote }}
-  KAFKA_TOPIC_EVENTS: {{ printf "%s.events.normalized" .Values.client.id | quote }}
-  KAFKA_TOPIC_ALERTS: {{ printf "%s.alerts.raw" .Values.client.id | quote }}
+  {{- $topicState := default "state.k8s.resource" .Values.stateWatcher.topicResource -}}
+  {{- $topicTopo  := default "state.k8s.topology" .Values.stateWatcher.topicTopology -}}
+  {{- $topicPromTargets := default "state.prom.targets" .Values.stateWatcher.topicPromTargets -}}
+  {{- $topicLogs := default "logs.normalized" .Values.vector.kafkaTopic -}}
+  {{- $topicEvents := default "events.normalized" .Values.eventExporter.kafkaTopic -}}
+  {{- $topicAlertsRaw := default "alerts.raw" .Values.alertReceiver.kafkaTopic -}}
+  {{- $topicAlertsEnriched := default "alerts.enriched" .Values.alertReceiver.kafkaTopicEnriched -}}
+  TOPIC_STATE: {{ $topicState | quote }}
+  TOPIC_TOPO: {{ $topicTopo | quote }}
+  TOPIC_PROM_TARGETS: {{ $topicPromTargets | quote }}
+  KAFKA_TOPIC_RESOURCE: {{ $topicState | quote }}
+  KAFKA_TOPIC_TOPOLOGY: {{ $topicTopo | quote }}
+  KAFKA_TOPIC_LOGS: {{ $topicLogs | quote }}
+  KAFKA_TOPIC_EVENTS: {{ $topicEvents | quote }}
+  KAFKA_TOPIC_ALERTS: {{ $topicAlertsRaw | quote }}
+  KAFKA_TOPIC_ALERTS_OUTPUT: {{ $topicAlertsEnriched | quote }}
+
+  # Optional services
+  PROM_URL: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+
+  # Leader election (for state-watcher)
+  LEASE_NAMESPACE: {{ .Release.Namespace | quote }}
+  LEASE_NAME: "state-watcher-leader"

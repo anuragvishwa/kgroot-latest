@@ -40,7 +40,9 @@ data:
     type = "kafka"
     inputs = ["normalize"]
     bootstrap_servers = "{{ .Values.client.kafka.brokers }}"
-    topic = "{{ .Values.client.id }}.logs.normalized"
+    {{- $defaultLogs := printf "logs.normalized" }}
+    {{- $topicLogs := default $defaultLogs .Values.vector.kafkaTopic }}
+    topic = "{{ $topicLogs }}"
     compression = "gzip"
 
     [sinks.kafka.encoding]
