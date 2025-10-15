@@ -218,6 +218,43 @@ docker exec kg-kafka kafka-console-consumer.sh \
   --topic events.normalized \
   --max-messages 5
 
+#
+# Alertmanager Integration (optional)
+#
+
+To forward Prometheus alerts to Kafka via the client’s alert-receiver, add a webhook receiver in Alertmanager.
+
+- Service URL (in-cluster):
+  - `http://kg-rca-agent-kg-rca-agent-alert-receiver.observability.svc:8080/alerts`
+
+Example (kube-prometheus-stack values):
+
+```yaml
+alertmanager:
+  config:
+    route:
+      receiver: kg-rca-agent
+    receivers:
+      - name: kg-rca-agent
+        webhook_configs:
+          - url: "http://kg-rca-agent-kg-rca-agent-alert-receiver.observability.svc:8080/alerts"
+```
+
+Quick test without changing Alertmanager (sends a sample alert):
+
+```bash
+kubectl -n observability run curl-tmp --rm -it \
+  --image=curlimages/curl:8.5.0 --restart=Never -- \
+  curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  -d '[{"status":"firing","labels":{"alertname":"TestAlert","severity":"warning"},"annotations":{"summary":"test"},"startsAt":"2025-01-01T00:00:00Z"}]' \
+  http://kg-rca-agent-kg-rca-agent-alert-receiver.observability.svc:8080/alerts
+
+# Then verify on the server
+ssh mini-server 'docker exec -it kg-kafka sh -lc \
+  "/opt/kafka/bin/kafka-run-class.sh kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic alerts.raw --time -1"'
+```
+
 # Check Neo4j for your cluster's data
 docker exec kg-neo4j cypher-shell -u neo4j -p Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA \
   "MATCH (n:Pod) WHERE n.name CONTAINS 'test' RETURN n.name, n.namespace, n.uid LIMIT 10"
