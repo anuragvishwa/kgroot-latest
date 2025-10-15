@@ -215,7 +215,13 @@ rbac:
   clusterRole:
     rules:
       - apiGroups: [""]
-        resources: ["pods", "services", "endpoints", "nodes", "events", "namespaces"]
+        resources: ["pods", "services", "endpoints", "nodes", "events", "namespaces", "configmaps"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["events.k8s.io"]
+        resources: ["events"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["discovery.k8s.io"]
+        resources: ["endpointslices"]
         verbs: ["get", "list", "watch"]
       - apiGroups: ["apps"]
         resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
