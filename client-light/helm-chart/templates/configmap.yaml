@@ -33,7 +33,8 @@ data:
   {{- $topicLogs := default "logs.normalized" .Values.vector.kafkaTopic -}}
   {{- $topicEvents := default "events.normalized" .Values.eventExporter.kafkaTopic -}}
   {{- $topicAlertsRaw := default "alerts.raw" .Values.alertReceiver.kafkaTopic -}}
-  {{- $topicAlertsEnriched := default "alerts.enriched" .Values.alertReceiver.kafkaTopicEnriched -}}
+  {{- $topicAlertsEnriched := default "alerts.enriched" .Values.alertReceiver.kafkaTopicEnriched }}
+
   TOPIC_STATE: {{ $topicState | quote }}
   TOPIC_TOPO: {{ $topicTopo | quote }}
   TOPIC_PROM_TARGETS: {{ $topicPromTargets | quote }}
