@@ -18,7 +18,7 @@ services:
       - kg-network
 
   # ============================================================================
-  # KAFKA - Message broker (Plaintext for internal Docker network)
+  # KAFKA - Message broker (External-only listener)
   # ============================================================================
   kafka:
     image: wurstmeister/kafka:latest
@@ -26,8 +26,7 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092" # Internal Docker network
-      - "9093:9093" # External SSL (configure in docker-compose.ssl.yml)
+      - "9092:9092" # External listener for clients
     environment:
       # Kafka broker ID
       KAFKA_BROKER_ID: 1
@@ -35,11 +34,11 @@ services:
       # Zookeeper connection
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
 
-      # Listeners - PLAINTEXT for internal Docker network
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # External-only listener and advertised public host
+      KAFKA_LISTENERS: OUTSIDE://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: OUTSIDE://${KAFKA_ADVERTISED_HOST}:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: OUTSIDE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: OUTSIDE
 
       # Topic defaults
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
@@ -85,7 +84,7 @@ services:
       - "7777:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: kg-prod
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: ${KAFKA_ADVERTISED_HOST}:9092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
       DYNAMIC_CONFIG_ENABLED: "true"
     restart: unless-stopped
@@ -158,7 +157,7 @@ services:
         condition: service_healthy
     environment:
       # Kafka configuration
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: ${KAFKA_ADVERTISED_HOST}:9092
       KAFKA_GROUP: alerts-enricher
 
       # Topics
@@ -190,7 +189,7 @@ services:
       - "9090:9090" # Prometheus metrics
     environment:
       # Kafka configuration
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: ${KAFKA_ADVERTISED_HOST}:9092
       KAFKA_GROUP: kg-builder
 
       # Neo4j configuration

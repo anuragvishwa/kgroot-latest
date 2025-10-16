@@ -56,6 +56,28 @@ spec:
                 configMapKeyRef:
                   name: {{ include "kg-rca-agent.fullname" . }}-config
                   key: KAFKA_BROKERS
+            - name: KAFKA_GROUP
+              value: "alerts-enricher-{{ .Values.client.id }}-v2"
+            - name: INPUT_TOPIC
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: KAFKA_TOPIC_EVENTS
+            - name: OUTPUT_TOPIC
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: KAFKA_TOPIC_ALERTS_OUTPUT
+            - name: STATE_RESOURCE_TOPIC
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: TOPIC_STATE
+            - name: STATE_TOPOLOGY_TOPIC
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: TOPIC_TOPO
             - name: KAFKA_TOPIC
               valueFrom:
                 configMapKeyRef:
@@ -91,21 +113,5 @@ spec:
               value: "info"
           resources:
             {{- toYaml .Values.alertReceiver.resources | nindent 12 }}
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
       restartPolicy: Always
 {{- end }}

@@ -1,0 +1,41 @@
+client:
+  id: "minikube-test"
+  kafka:
+    brokers: "98.90.147.12:9092"  # <- set to your mini-server host:port
+    sasl:
+      enabled: false
+
+# Limit or leave empty for all namespaces
+# client:
+#   monitoredNamespaces: []
+
+stateWatcher:
+  enabled: true
+  # Use the helper: scripts/check-or-install-prometheus.sh to discover this URL
+  # If you installed kube-prometheus-stack via that helper, the fallback name is below:
+  prometheusUrl: "http://prom-kube-prometheus-stack-prometheus.monitoring.svc:9090"
+
+vector:
+  enabled: true
+  # Optional: keep default logs topic or override
+  kafkaTopic: "logs.normalized"
+  # Mirror raw logs (high volume)
+  rawLogsTopic: "raw.k8s.logs"
+
+# Event exporter writes to events.normalized (consumed downstream)
+eventExporter:
+  enabled: true
+  kafkaTopic: "events.normalized"
+  # Mirror raw k8s events
+  rawTopic: "raw.k8s.events"
+
+# Vector HTTP webhook for Alertmanager -> populates events.normalized + raw.prom.alerts
+alertsWebhook:
+  enabled: true
+  port: 9090
+  rawTopic: "raw.prom.alerts"
+
+# Alerts enricher (consumes events.normalized prom.alert, produces alerts.enriched)
+alertReceiver:
+  enabled: true
+  replicaCount: 2

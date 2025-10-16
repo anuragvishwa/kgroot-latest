@@ -132,7 +132,7 @@ docker exec kg-neo4j cypher-shell -u neo4j -p <password> \
 client:
   id: "test-cluster"
   kafka:
-    bootstrapServers: "server-ip:9092"
+    brokers: "server-ip:9092"
 ```
 
 ### Production Configuration (SSL + Authentication)
@@ -143,7 +143,7 @@ client:
   apiKey: "prod-api-key-xyz"
 
   kafka:
-    bootstrapServers: "kafka.company.com:9093"
+    brokers: "kafka.company.com:9093"
     sasl:
       enabled: true
       mechanism: SCRAM-SHA-512
@@ -167,6 +167,10 @@ eventExporter:
 
 stateWatcher:
   enabled: true
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+
+alertReceiver:
+  enabled: true
 ```
 
 ### Component Details
@@ -189,6 +193,14 @@ stateWatcher:
 - Monitors resource state (Pod, Deployment, Service, etc.)
 - Tracks topology relationships
 - Sends to: `state.k8s.resource` and `state.k8s.topology` topics
+- Polls Prometheus `/api/v1/targets` (configure `stateWatcher.prometheusUrl`) and produces to `state.prom.targets`
+
+#### Alert Webhook
+
+- Provided by Vector's http_server (exposed via `-alert-webhook` service)
+- Accepts Alertmanager webhooks and produces `prom.alert` events into `events.normalized`
+- Alerts Enricher consumes those and writes to `alerts.enriched`
+- Webhook URL: `http://<release>-alert-webhook.<namespace>.svc:9090/alerts`
 
 #### Prometheus Agent (Optional)
 

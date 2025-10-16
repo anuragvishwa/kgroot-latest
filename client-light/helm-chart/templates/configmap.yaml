@@ -46,7 +46,7 @@ data:
   KAFKA_TOPIC_ALERTS_OUTPUT: {{ $topicAlertsEnriched | quote }}
 
   # Optional services
-  PROM_URL: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+  PROM_URL: {{ default "http://kube-prometheus-stack-prometheus.monitoring.svc:9090" .Values.stateWatcher.prometheusUrl | quote }}
 
   # Leader election (for state-watcher)
   LEASE_NAMESPACE: {{ .Release.Namespace | quote }}

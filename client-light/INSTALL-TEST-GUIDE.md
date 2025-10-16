@@ -98,7 +98,9 @@ cat > test-values.yaml <<EOF
 client:
   id: "test-minikube"
   kafka:
-    bootstrapServers: "${SERVER_IP}:9092"
+    brokers: "${SERVER_IP}:9092"
+stateWatcher:
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"  # Update if service name differs
 
 vector:
   enabled: true
@@ -131,7 +133,9 @@ cat > prod-test-values.yaml <<EOF
 client:
   id: "test-prod-cluster"
   kafka:
-    bootstrapServers: "98.90.147.12:9092"  # Replace with your server
+    brokers: "98.90.147.12:9092"  # Replace with your server
+stateWatcher:
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
 
 # Optional: limit to specific namespaces for testing
 monitoredNamespaces: ["default", "test"]
@@ -156,6 +160,7 @@ kubectl get pods -n observability
 # kg-rca-agent-vector-xxxxx                     1/1     Running   0          1m
 # kg-rca-agent-event-exporter-xxxxxxxxxx-xxxxx  1/1     Running   0          1m
 # kg-rca-agent-state-watcher-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+# kg-rca-agent-alert-receiver-xxxxxxxxxx-xxxxx  1/1     Running   0          1m
 ```
 
 ### 2. Check Vector Logs
@@ -187,9 +192,28 @@ kubectl logs -n observability -l app=state-watcher --tail=50
 # Should see:
 # - "Watching resources: Pod, Deployment, Service..."
 # - "Sent resource state to Kafka"
+# - "prom targets" log lines confirming `/api/v1/targets` sync
 ```
 
-### 5. Generate Test Events
+### 5. Check Alert Receiver
+
+```bash
+kubectl logs -n observability -l component=alert-receiver --tail=50
+```
+
+Expected:
+- Starts consumer group `alerts-enricher-<client-id>`
+- Prints `Connected to Kafka` and `Subscribed to topics`
+
+> **Next:** Add the Alertmanager webhook URL  
+> Grab the service name:
+> ```bash
+> kubectl get svc -n observability -l component=alert-webhook
+> ```
+> Then configure Alertmanager:
+> `http://<service>.<namespace>.svc:9090/alerts`
+
+### 6. Generate Test Events
 
 Create some activity in the cluster:
 

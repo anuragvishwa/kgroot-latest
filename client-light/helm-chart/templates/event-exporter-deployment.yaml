@@ -16,13 +16,17 @@ data:
       routes:
         - match:
             - receiver: "kafka"
+        {{- if .Values.eventExporter.rawTopic }}
+        - match:
+            - receiver: "kafka-raw"
+        {{- end }}
     receivers:
       - name: "kafka"
         kafka:
           brokers:
             - {{ .Values.client.kafka.brokers | quote }}
-          {{- $defaultEvents := printf "events.normalized" -}}
-          {{- $topicEvents := default $defaultEvents .Values.eventExporter.kafkaTopic -}}
+          {{ $defaultEvents := printf "events.normalized" }}
+          {{ $topicEvents := default $defaultEvents .Values.eventExporter.kafkaTopic }}
           topic: {{ $topicEvents | quote }}
           {{- if .Values.client.kafka.sasl.enabled }}
           sasl:
@@ -34,6 +38,25 @@ data:
           compression: gzip
           requireAcks: 1
           maxRetry: 3
+      {{- if .Values.eventExporter.rawTopic }}
+      - name: "kafka-raw"
+        kafka:
+          brokers:
+            - {{ .Values.client.kafka.brokers | quote }}
+          {{ $defaultRaw := printf "raw.k8s.events" }}
+          {{ $topicRaw := default $defaultRaw .Values.eventExporter.rawTopic }}
+          topic: {{ $topicRaw | quote }}
+          {{- if .Values.client.kafka.sasl.enabled }}
+          sasl:
+            enabled: true
+            mechanism: {{ .Values.client.kafka.sasl.mechanism | quote }}
+            username: "${KAFKA_SASL_USERNAME}"
+            password: "${KAFKA_SASL_PASSWORD}"
+          {{- end }}
+          compression: gzip
+          requireAcks: 1
+          maxRetry: 3
+      {{- end }}
 
 ---
 apiVersion: apps/v1

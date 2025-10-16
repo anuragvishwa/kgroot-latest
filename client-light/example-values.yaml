@@ -16,10 +16,10 @@ client:
   # Kafka connection to KG RCA Server
   kafka:
     # OPTION 1: Plaintext connection (testing/internal networks)
-    bootstrapServers: "98.90.147.12:9092"
+    brokers: "98.90.147.12:9092"
 
     # OPTION 2: SSL connection (production)
-    # bootstrapServers: "kafka.lumniverse.com:9093"
+    # brokers: "kafka.lumniverse.com:9093"
     # sasl:
     #   enabled: true
     #   mechanism: SCRAM-SHA-512
@@ -76,6 +76,9 @@ stateWatcher:
 
   replicaCount: 1
 
+  # Prometheus /api/v1/targets endpoint inside your cluster
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+
   resources:
     requests:
       cpu: 100m
@@ -101,6 +104,18 @@ prometheusAgent:
     limits:
       cpu: 1000m
       memory: 2Gi
+# ============================================================================
+# Alert Receiver - Prometheus Alerts Webhook
+# ============================================================================
+alertReceiver:
+  enabled: true
+
+  replicaCount: 2
+
+  # After installing the chart, point Alertmanager to:
+  #   http://kg-rca-agent-kg-rca-agent-alert-receiver.observability.svc:9093/alerts
+  # Adjust release/namespace to match your deployment.
+
 # ============================================================================
 # Advanced Configuration
 # ============================================================================

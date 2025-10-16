@@ -45,11 +45,20 @@ stateWatcher:
       cpu: 500m
       memory: 512Mi
 
+  # Prometheus HTTP endpoint used for /api/v1/targets scraping.
+  # Override this when your kube-prometheus-stack release uses a different service name.
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+
   env:
     KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
     KAFKA_TOPIC_RESOURCE: "state.k8s.resource"
     KAFKA_TOPIC_TOPOLOGY: "state.k8s.topology"
     WATCH_NAMESPACES: ""  # Populated from client.monitoredNamespaces
+
+  # Explicit topic overrides for templates
+  topicResource: ""
+  topicTopology: ""
+  topicPromTargets: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # Vector - Log Collection
@@ -98,6 +107,18 @@ vector:
           codec: json
   # Optional override for logs topic (default: logs.normalized)
   kafkaTopic: ""
+  # Optional mirror of raw container logs directly to Kafka
+  rawLogsTopic: ""  # e.g., "raw.k8s.logs" to also publish raw logs
+
+# ───────────────────────────────────────────────────────────────────────────
+# Alertmanager Webhook (Vector-based)
+# Accept Alertmanager POSTs and forward to Kafka
+# ───────────────────────────────────────────────────────────────────────────
+alertsWebhook:
+  enabled: true
+  port: 9090
+  # Raw topic for storing original Alertmanager payloads (optional)
+  rawTopic: "raw.prom.alerts"
 
 # ───────────────────────────────────────────────────────────────────────────
 # Event Exporter - Kubernetes Events
@@ -124,14 +145,22 @@ eventExporter:
       routes:
         - match:
             - receiver: kafka
+        - match:
+            - receiver: kafka-raw
     receivers:
       - name: kafka
         kafka:
           brokers: []  # Populated from client.kafka.brokers
           topic: ""  # Set via eventExporter.kafkaTopic; default resolves to events.normalized
+      - name: kafka-raw
+        kafka:
+          brokers: []  # Populated from client.kafka.brokers
+          topic: ""  # Set via eventExporter.rawTopic; default resolves to raw.k8s.events
 
   # Optional override for events topic (default: events.normalized)
   kafkaTopic: ""
+  # Optional mirror to raw events topic
+  rawTopic: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # Prometheus Agent - Metrics Collection
@@ -181,8 +210,8 @@ alertReceiver:
   enabled: true
   image:
     repository: anuragvishwa/kg-alert-receiver
-    tag: "1.0.2"
-    pullPolicy: IfNotPresent
+    tag: "1.0.8"
+    pullPolicy: Always
 
   replicaCount: 2
 
@@ -198,12 +227,6 @@ alertReceiver:
     KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
     KAFKA_TOPIC: "alerts.raw"
     CLIENT_ID: ""  # Populated from client.id
-
-# Explicit topic overrides for templates
-stateWatcher:
-  topicResource: ""
-  topicTopology: ""
-  topicPromTargets: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # RBAC - Service Account and Permissions

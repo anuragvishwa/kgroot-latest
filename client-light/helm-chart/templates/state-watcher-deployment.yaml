@@ -44,11 +44,36 @@ spec:
                 configMapKeyRef:
                   name: {{ include "kg-rca-agent.fullname" . }}-config
                   key: CLIENT_ID
+            - name: CLUSTER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: CLUSTER_NAME
+            - name: KAFKA_BOOTSTRAP
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: KAFKA_BOOTSTRAP
             - name: KAFKA_BROKERS
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "kg-rca-agent.fullname" . }}-config
                   key: KAFKA_BROKERS
+            - name: KAFKA_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: KAFKA_CLIENT_ID
+            - name: TOPIC_STATE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: TOPIC_STATE
+            - name: TOPIC_TOPO
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: TOPIC_TOPO
             - name: KAFKA_TOPIC_RESOURCE
               valueFrom:
                 configMapKeyRef:
@@ -69,6 +94,36 @@ spec:
                 configMapKeyRef:
                   name: {{ include "kg-rca-agent.fullname" . }}-config
                   key: KAFKA_SASL_ENABLED
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PROM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: PROM_URL
+                  optional: true
+            - name: TOPIC_PROM_TARGETS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: TOPIC_PROM_TARGETS
+                  optional: true
+            - name: LEASE_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: LEASE_NAMESPACE
+            - name: LEASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kg-rca-agent.fullname" . }}-config
+                  key: LEASE_NAME
             {{- if .Values.client.kafka.sasl.enabled }}
             # Kafka SASL Credentials from Secret
             - name: KAFKA_SASL_MECHANISM
@@ -89,21 +144,5 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.stateWatcher.resources | nindent 12 }}
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
       restartPolicy: Always
 {{- end }}

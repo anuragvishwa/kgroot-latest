@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oomkill
+  namespace: buglab
+  labels:
+    app: bug-oomkill
+    scenario: oomkill
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bug-oomkill
+  template:
+    metadata:
+      labels:
+        app: bug-oomkill
+        scenario: oomkill
+    spec:
+      containers:
+        - name: stress
+          image: polinux/stress
+          args: ["--vm","1","--vm-bytes","150M","--vm-hang","1"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi

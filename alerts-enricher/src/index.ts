@@ -1,15 +1,18 @@
 import { Kafka, Consumer, Producer, EachMessagePayload, CompressionTypes, CompressionCodecs } from 'kafkajs';
 import { AlertGrouper, Alert } from './alert-grouper';
-const ZstdCodec = require('zstd-codec').ZstdCodec;
+import { compress, decompress } from '@mongodb-js/zstd';
 
-// Register ZSTD codec
-ZstdCodec.run((zstd: any) => {
-  CompressionCodecs[CompressionTypes.ZSTD] = () => ({
-    compress: () => (value: Buffer) => Buffer.from(zstd.compress(value)),
-    decompress: () => (value: Buffer) => Buffer.from(zstd.decompress(value))
-  });
-  console.log('[enricher] ZSTD codec registered');
+// Register ZSTD codec for KafkaJS
+CompressionCodecs[CompressionTypes.ZSTD] = () => ({
+  async compress(buffer: Buffer) {
+    return await compress(buffer);
+  },
+  async decompress(buffer: Buffer) {
+    return await decompress(buffer);
+  }
 });
+
+console.log('[enricher] ZSTD codec registered');
 
 // Environment configuration
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -63,14 +66,10 @@ interface EnrichedAlert extends NormalizedEvent {
   };
 }
 
-// Kafka setup
-const kafka = new Kafka({
-  clientId: 'alerts-enricher',
-  brokers: KAFKA_BROKERS,
-});
-
-const consumer: Consumer = kafka.consumer({ groupId: KAFKA_GROUP });
-const producer: Producer = kafka.producer();
+// Kafka setup - will be initialized in main() after ZSTD codec is registered
+let kafka: Kafka;
+let consumer: Consumer;
+let producer: Producer;
 
 // Build resource key from subject
 function buildResourceKey(subject: any): string {
@@ -258,6 +257,15 @@ async function main() {
   console.log(`[enricher] Output topic: ${OUTPUT_TOPIC}`);
   console.log(`[enricher] Alert grouping: ${ENABLE_GROUPING ? 'ENABLED' : 'DISABLED'}`);
   console.log(`[enricher] Grouping window: ${GROUPING_WINDOW_MIN} minutes`);
+
+  // Initialize Kafka (supports gzip, snappy, and uncompressed)
+  kafka = new Kafka({
+    clientId: 'alerts-enricher',
+    brokers: KAFKA_BROKERS,
+  });
+
+  consumer = kafka.consumer({ groupId: KAFKA_GROUP });
+  producer = kafka.producer();
 
   await consumer.connect();
   await producer.connect();

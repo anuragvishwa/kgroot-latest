@@ -8,16 +8,22 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts"
   },
-  "keywords": ["kafka", "alerts", "kubernetes", "rca"],
+  "keywords": [
+    "kafka",
+    "alerts",
+    "kubernetes",
+    "rca"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@mongodb-js/zstd": "^2.0.1",
     "kafkajs": "^2.2.4",
     "zstd-codec": "^0.1.2"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "typescript": "^5.3.3",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
   }
 }
