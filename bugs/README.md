@@ -11,7 +11,7 @@ Comprehensive, production-like K8s failure scenarios to thoroughly test your cli
 kubectl apply -k bugs
 
 # Or install via Helm
-helm repo add kgroot https://anuragvishwakarma.github.io/kgroot/
+helm repo add kgroot https://anuragvishwa.github.io/kgroot/
 helm install bugs kgroot/bugs --namespace buglab --create-namespace
 
 # Delete all

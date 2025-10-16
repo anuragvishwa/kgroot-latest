@@ -6,7 +6,7 @@ Kubernetes Bug Scenarios for RCA Testing - comprehensive production-like failure
 
 ```bash
 # Add the repository
-helm repo add kgroot https://anuragvishwakarma.github.io/kgroot/
+helm repo add kgroot https://anuragvishwa.github.io/kgroot/
 helm repo update
 
 # Install in buglab namespace
@@ -101,4 +101,4 @@ Perfect for testing RCA pipelines, monitoring systems, and alerting mechanisms.
 
 ## Source
 
-GitHub: https://github.com/anuragvishwakarma/kgroot
+GitHub: https://github.com/anuragvishwa/kgroot
