@@ -268,6 +268,72 @@ serviceAccount:
   name: kg-rca-agent
 
 # ───────────────────────────────────────────────────────────────────────────
+# Prometheus (kube-prometheus-stack) - Optional
+# Install Prometheus if it doesn't exist in the cluster
+# ───────────────────────────────────────────────────────────────────────────
+prometheus:
+  # Set to true to install kube-prometheus-stack as a subchart
+  install: false
+
+  # Namespace where Prometheus will be installed (if install: true)
+  # If different from .Release.Namespace, a separate namespace will be created
+  namespace: "monitoring"
+
+  # Release name for the Prometheus installation
+  releaseName: "kube-prometheus-stack"
+
+  # kube-prometheus-stack chart configuration
+  # These values are passed to the kube-prometheus-stack subchart
+  config:
+    # Disable Grafana by default (you can enable if needed)
+    grafana:
+      enabled: false
+
+    # Enable Prometheus
+    prometheus:
+      enabled: true
+      service:
+        port: 9090
+      prometheusSpec:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        retention: 7d
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi
+
+    # Enable AlertManager
+    alertmanager:
+      enabled: true
+      service:
+        port: 9093
+      alertmanagerSpec:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+    # Enable kube-state-metrics
+    kubeStateMetrics:
+      enabled: true
+
+    # Disable node-exporter by default (enable if you need node metrics)
+    nodeExporter:
+      enabled: false
+
+# ───────────────────────────────────────────────────────────────────────────
 # Network Policies
 # ───────────────────────────────────────────────────────────────────────────
 networkPolicy:
