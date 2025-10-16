@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.8
+version: 1.0.9
 appVersion: "1.0.3"
 keywords:
   - knowledge-graph
@@ -38,6 +38,8 @@ annotations:
     - name: Website
       url: https://lumniverse.com
   artifacthub.io/changes: |
+    - kind: added
+      description: Kafka message key support for raw.prom.alerts (uses groupKey for partitioning)
     - kind: added
       description: Kafka message key support for logs.normalized (uses pod_uid for partitioning)
     - kind: added
