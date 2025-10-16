@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: readiness-fail
+  namespace: buglab
+  labels:
+    app: bug-readiness
+    scenario: readiness-fail
+spec:
+  restartPolicy: Always
+  containers:
+    - name: not-ready
+      image: nginx:1.25-alpine
+      ports:
+        - containerPort: 80
+      readinessProbe:
+        httpGet:
+          path: /nonexistent
+          port: 8888
+        initialDelaySeconds: 5
+        periodSeconds: 5
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

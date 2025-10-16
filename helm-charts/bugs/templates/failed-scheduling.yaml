@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: failed-scheduling
+  namespace: buglab
+  labels:
+    app: bug-failedscheduling
+    scenario: failedscheduling
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bug-failedscheduling
+  template:
+    metadata:
+      labels:
+        app: bug-failedscheduling
+        scenario: failedscheduling
+    spec:
+      nodeSelector:
+        this.label.does.not.exist: "true"
+      containers:
+        - name: sleeper
+          image: busybox:1.36
+          command: ["sh","-c"]
+          args: ["sleep 3600"]
+          resources:
+            requests:
+              cpu: 2000
+              memory: 2048Mi

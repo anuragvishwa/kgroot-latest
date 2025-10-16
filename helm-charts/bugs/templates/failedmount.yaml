@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: failedmount-missing-config
+  namespace: buglab
+  labels:
+    app: bug-failedmount
+    scenario: failedmount
+spec:
+  restartPolicy: Always
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh","-c"]
+      args: ["echo waiting; sleep 3600"]
+      volumeMounts:
+        - name: missing-config
+          mountPath: /etc/app
+  volumes:
+    - name: missing-config
+      configMap:
+        name: this-configmap-does-not-exist

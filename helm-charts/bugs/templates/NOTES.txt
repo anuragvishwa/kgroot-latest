@@ -1,0 +1,50 @@
+Thank you for installing {{ .Chart.Name }} version {{ .Chart.Version }}!
+
+Kubernetes Bug Scenarios for RCA Testing have been deployed.
+
+NAMESPACE: {{ .Values.namespace }}
+
+The following bug scenarios are now running:
+- CrashLoopBackOff (crashloop)
+- ImagePullBackOff (imagepullbackoff)
+- Liveness Failure (liveness-fail)
+- Failed Mount (failedmount)
+- Failed Scheduling (failed-scheduling)
+- OOM Killed (oomkill)
+- Readiness Failure (readiness-fail)
+- PVC Pending (pvc-pending)
+- Secret Missing (secret-missing)
+- CPU Throttle (cpu-throttle)
+- DNS Failure (network-dns-fail)
+- Init Container Failure (init-container-fail)
+- Port Conflict (port-conflict)
+- Disk Pressure (disk-pressure)
+- Service No Endpoints (service-endpoint-fail)
+- ConfigMap Outdated (configmap-immutable-fail)
+- Memory Creep/Eviction (evicted-pod)
+- Zombie Process (zombie-process)
+- Terminating Stuck (terminating-stuck)
+
+VERIFICATION COMMANDS:
+
+1. View all pods:
+   kubectl get pods -n {{ .Values.namespace }} -o wide
+
+2. View events:
+   kubectl get events -n {{ .Values.namespace }} --sort-by=.lastTimestamp | tail -n 50
+
+3. View logs from a specific scenario:
+   kubectl logs -n {{ .Values.namespace }} -l scenario=crashloop --tail=50
+
+4. Check resource usage (requires metrics-server):
+   kubectl top pods -n {{ .Values.namespace }}
+
+CLEANUP:
+
+To remove the terminating-stuck pod (if needed):
+   kubectl patch pod terminating-stuck -n {{ .Values.namespace }} -p '{"metadata":{"finalizers":null}}'
+
+To uninstall this release:
+   helm uninstall {{ .Release.Name }} -n {{ .Values.namespace }}
+
+For more information, visit: {{ .Chart.Home }}

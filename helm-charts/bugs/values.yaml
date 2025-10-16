@@ -1,0 +1,36 @@
+# Default values for bugs chart
+# This chart deploys various K8s bug scenarios for RCA testing
+
+# Namespace configuration
+namespace: buglab
+
+# Enable/disable specific bug scenarios
+scenarios:
+  crashloop: true
+  imagepullbackoff: true
+  livenessFail: true
+  failedMount: true
+  failedScheduling: true
+  oomkill: true
+  readinessFail: true
+  pvcPending: true
+  secretMissing: true
+  cpuThrottle: true
+  dnsFailure: true
+  initContainerFail: true
+  portConflict: true
+  diskPressure: true
+  serviceNoEndpoints: true
+  configmapOutdated: true
+  evictedPod: true
+  zombieProcess: true
+  terminatingStuck: true
+
+# Resource limits for bug scenarios
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi

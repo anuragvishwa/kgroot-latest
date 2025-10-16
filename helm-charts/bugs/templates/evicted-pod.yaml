@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: memory-creep
+  namespace: buglab
+  labels:
+    app: bug-memory-creep
+    scenario: eviction-candidate
+spec:
+  restartPolicy: Always
+  containers:
+    - name: memory-leak
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Memory creep scenario: slowly increasing memory usage"
+          echo "This simulates a memory leak that may trigger pod eviction"
+          counter=0
+          while true; do
+            # Allocate memory gradually
+            head -c $((1024 * 1024 * counter)) /dev/zero | tail -c $((1024 * 512)) > /tmp/leak_$counter 2>/dev/null || true
+            counter=$((counter + 1))
+            echo "Allocated ${counter}MB worth of data"
+            sleep 5
+            # Cap at 20MB to avoid immediate OOM
+            if [ $counter -ge 20 ]; then
+              echo "Reached memory threshold, holding..."
+              sleep 300
+            fi
+          done
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
