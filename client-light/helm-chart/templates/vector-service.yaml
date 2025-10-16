@@ -1,0 +1,21 @@
+{{- if and .Values.vector.enabled .Values.alertsWebhook.enabled -}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-vector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+    component: vector
+spec:
+  type: ClusterIP
+  ports:
+    - name: webhook
+      port: {{ .Values.alertsWebhook.port }}
+      targetPort: {{ .Values.alertsWebhook.port }}
+      protocol: TCP
+  selector:
+    {{- include "kg-rca-agent.selectorLabels" . | nindent 4 }}
+    component: vector
+{{- end }}
