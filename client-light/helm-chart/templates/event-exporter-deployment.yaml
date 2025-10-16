@@ -28,6 +28,8 @@ data:
           {{ $defaultEvents := printf "events.normalized" }}
           {{ $topicEvents := default $defaultEvents .Values.eventExporter.kafkaTopic }}
           topic: {{ $topicEvents | quote }}
+          # Use event UID as message key for Kafka partitioning
+          key: "{{ `{{ .UID }}` }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           sasl:
             enabled: true
