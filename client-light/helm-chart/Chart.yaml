@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.9
+version: 1.0.10
 appVersion: "1.0.3"
 keywords:
   - knowledge-graph
@@ -39,31 +39,15 @@ annotations:
       url: https://lumniverse.com
   artifacthub.io/changes: |
     - kind: added
+      description: RBAC permissions for PersistentVolumeClaims and PersistentVolumes (fixes event-exporter warnings)
+    - kind: added
+      description: Support for raw Kafka topics (raw.k8s.logs and raw.k8s.events) for archiving unprocessed data
+    - kind: added
       description: Kafka message key support for raw.prom.alerts (uses groupKey for partitioning)
     - kind: added
       description: Kafka message key support for logs.normalized (uses pod_uid for partitioning)
     - kind: added
-      description: Optional automatic Prometheus (kube-prometheus-stack) installation
-    - kind: added
       description: Multi-architecture support for alert-receiver (linux/amd64, linux/arm64)
-    - kind: added
-      description: Initial production release of KG RCA Agent
-    - kind: added
-      description: Kubernetes event collection with real-time streaming
-    - kind: added
-      description: Pod log aggregation with Vector
-    - kind: added
-      description: SSL/TLS support for secure Kafka communication
-    - kind: added
-      description: Configurable resource limits and requests
-    - kind: added
-      description: RBAC with minimal required permissions
-    - kind: added
-      description: Multi-namespace and cluster-wide monitoring support
-    - kind: fixed
-      description: Fix Vector DaemonSet crash by setting self_node_name and VECTOR_SELF_NODE_NAME; add RBAC to list namespaces
-    - kind: fixed
-      description: RBAC grant apps/batch/events.k8s.io/discovery.k8s.io for state-watcher + events exporter; topic defaults aligned to server
     - kind: fixed
       description: Alert-receiver exec format error on AMD64 clusters
   artifacthub.io/containsSecurityUpdates: "false"

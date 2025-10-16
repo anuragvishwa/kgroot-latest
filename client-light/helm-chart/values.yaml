@@ -248,6 +248,8 @@ rbac:
             "events",
             "namespaces",
             "configmaps",
+            "persistentvolumeclaims",
+            "persistentvolumes",
           ]
         verbs: ["get", "list", "watch"]
       - apiGroups: ["events.k8s.io"]
