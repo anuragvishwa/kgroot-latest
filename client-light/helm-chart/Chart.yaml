@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.12
+version: 1.0.13
 appVersion: "1.0.3"
 keywords:
   - knowledge-graph
@@ -39,6 +39,8 @@ annotations:
       url: https://lumniverse.com
   artifacthub.io/changes: |
     - kind: added
+      description: Automatic Alertmanager webhook configuration via Helm hook (no manual kubectl commands needed)
+    - kind: added
       description: Kafka message key support for events.normalized (uses event UID for partitioning)
     - kind: fixed
       description: Added missing Vector Service for Alertmanager webhook endpoint (fixes AlertmanagerFailedToSendAlerts)
@@ -46,10 +48,6 @@ annotations:
       description: RBAC permissions for PersistentVolumeClaims and PersistentVolumes (fixes event-exporter warnings)
     - kind: added
       description: Support for raw Kafka topics (raw.k8s.logs and raw.k8s.events) for archiving unprocessed data
-    - kind: added
-      description: Kafka message key support for raw.prom.alerts (uses groupKey for partitioning)
-    - kind: added
-      description: Kafka message key support for logs.normalized (uses pod_uid for partitioning)
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/signKey: |
     fingerprint: # Add GPG key fingerprint if signing releases
