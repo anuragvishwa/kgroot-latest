@@ -1,0 +1,97 @@
+name: Publish Helm Chart
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'client-light/helm-chart/**'
+      - 'client-light/helm-chart/Chart.yaml'
+  workflow_dispatch:
+    inputs:
+      chart_version:
+        description: 'Chart version to publish (leave empty to use Chart.yaml version)'
+        required: false
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.13.0'
+
+      - name: Get chart version
+        id: chart_version
+        run: |
+          if [ -n "${{ github.event.inputs.chart_version }}" ]; then
+            VERSION="${{ github.event.inputs.chart_version }}"
+          else
+            VERSION=$(grep '^version:' client-light/helm-chart/Chart.yaml | awk '{print $2}')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Chart version: $VERSION"
+
+      - name: Package Helm chart
+        run: |
+          cd client-light
+          helm package helm-chart/
+          ls -lh kg-rca-agent-*.tgz
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Update Helm repository
+        run: |
+          # Copy new chart package
+          cp client-light/kg-rca-agent-${{ steps.chart_version.outputs.version }}.tgz gh-pages/
+
+          # Update index
+          cd gh-pages
+          helm repo index . --url https://anuragvishwa.github.io/kgroot-latest/ --merge index.yaml
+
+          # Show changes
+          echo "Updated files:"
+          ls -lh *.tgz
+          echo ""
+          echo "Index contents:"
+          cat index.yaml
+
+      - name: Commit and push to gh-pages
+        run: |
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "chore: publish Helm chart v${{ steps.chart_version.outputs.version }}" || echo "No changes to commit"
+          git push origin gh-pages
+
+      - name: Summary
+        run: |
+          echo "## Helm Chart Published Successfully! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Chart Version:** v${{ steps.chart_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Installation" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "helm repo add kg-rca-agent https://anuragvishwa.github.io/kgroot-latest/" >> $GITHUB_STEP_SUMMARY
+          echo "helm repo update" >> $GITHUB_STEP_SUMMARY
+          echo "helm install kg-rca-agent kg-rca-agent/kg-rca-agent --version ${{ steps.chart_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Helm Repository](https://anuragvishwa.github.io/kgroot-latest/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Chart Package](https://anuragvishwa.github.io/kgroot-latest/kg-rca-agent-${{ steps.chart_version.outputs.version }}.tgz)" >> $GITHUB_STEP_SUMMARY
