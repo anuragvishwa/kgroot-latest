@@ -31,6 +31,16 @@ data:
     source = '''
     .client_id = "{{ .Values.client.id }}"
     .event_time = now()
+
+    # Extract pod_uid for use as message key (for Kafka partitioning)
+    pod_uid, err = get_env_var("HOSTNAME")
+    if is_null(pod_uid) || pod_uid == "" {
+      # Fallback: use pod namespace + name as key
+      pod_ns = string!(.kubernetes.pod_namespace)
+      pod_name = string!(.kubernetes.pod_name)
+      pod_uid = join!([pod_ns, pod_name], "/")
+    }
+    .pod_uid = pod_uid
     '''
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -121,6 +131,8 @@ data:
     {{- $topicLogs := default $defaultLogs .Values.vector.kafkaTopic }}
     topic = "{{ $topicLogs }}"
     compression = "gzip"
+    # Use pod_uid as message key for even partition distribution and ordering
+    key_field = "pod_uid"
 
     [sinks.kafka.encoding]
     codec = "json"
