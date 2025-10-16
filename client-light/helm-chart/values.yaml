@@ -17,13 +17,13 @@ client:
   kafka:
     brokers: "kafka.kg-rca.yourcompany.com:9092"
     sasl:
-      enabled: false  # Set to true for SSL/SASL authentication
+      enabled: false # Set to true for SSL/SASL authentication
       mechanism: SCRAM-SHA-512
-      username: ""  # Same as client.id
-      password: ""  # Provided by server
+      username: "" # Same as client.id
+      password: "" # Provided by server
 
   # Namespace to monitor (default: all accessible namespaces)
-  monitoredNamespaces: []  # Empty means all accessible
+  monitoredNamespaces: [] # Empty means all accessible
 
 # ───────────────────────────────────────────────────────────────────────────
 # State Watcher - Kubernetes Resource Monitoring
@@ -50,10 +50,10 @@ stateWatcher:
   prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
 
   env:
-    KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
+    KAFKA_BROKERS: "" # Populated from client.kafka.brokers
     KAFKA_TOPIC_RESOURCE: "state.k8s.resource"
     KAFKA_TOPIC_TOPOLOGY: "state.k8s.topology"
-    WATCH_NAMESPACES: ""  # Populated from client.monitoredNamespaces
+    WATCH_NAMESPACES: "" # Populated from client.monitoredNamespaces
 
   # Explicit topic overrides for templates
   topicResource: ""
@@ -101,14 +101,14 @@ vector:
       kafka:
         type: kafka
         inputs: ["normalize"]
-        bootstrap_servers: ""  # Populated from client.kafka.brokers
-        topic: ""  # Set via vector.kafkaTopic; default resolves to logs.normalized
+        bootstrap_servers: "" # Populated from client.kafka.brokers
+        topic: "" # Set via vector.kafkaTopic; default resolves to logs.normalized
         encoding:
           codec: json
   # Optional override for logs topic (default: logs.normalized)
   kafkaTopic: ""
   # Optional mirror of raw container logs directly to Kafka
-  rawLogsTopic: ""  # e.g., "raw.k8s.logs" to also publish raw logs
+  rawLogsTopic: "" # e.g., "raw.k8s.logs" to also publish raw logs
 
 # ───────────────────────────────────────────────────────────────────────────
 # Alertmanager Webhook (Vector-based)
@@ -150,12 +150,12 @@ eventExporter:
     receivers:
       - name: kafka
         kafka:
-          brokers: []  # Populated from client.kafka.brokers
-          topic: ""  # Set via eventExporter.kafkaTopic; default resolves to events.normalized
+          brokers: [] # Populated from client.kafka.brokers
+          topic: "" # Set via eventExporter.kafkaTopic; default resolves to events.normalized
       - name: kafka-raw
         kafka:
-          brokers: []  # Populated from client.kafka.brokers
-          topic: ""  # Set via eventExporter.rawTopic; default resolves to raw.k8s.events
+          brokers: [] # Populated from client.kafka.brokers
+          topic: "" # Set via eventExporter.rawTopic; default resolves to raw.k8s.events
 
   # Optional override for events topic (default: events.normalized)
   kafkaTopic: ""
@@ -195,11 +195,12 @@ prometheusAgent:
       evaluation_interval: 30s
 
     scrape_configs:
-      - job_name: 'kubernetes-pods'
+      - job_name: "kubernetes-pods"
         kubernetes_sd_configs:
           - role: pod
         relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+          - source_labels:
+              [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
             action: keep
             regex: true
 
@@ -210,7 +211,7 @@ alertReceiver:
   enabled: true
   image:
     repository: anuragvishwa/kg-alert-receiver
-    tag: "1.0.8"
+    tag: "1.0.9"
     pullPolicy: Always
 
   replicaCount: 2
@@ -224,9 +225,9 @@ alertReceiver:
       memory: 512Mi
 
   env:
-    KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
+    KAFKA_BROKERS: "" # Populated from client.kafka.brokers
     KAFKA_TOPIC: "alerts.raw"
-    CLIENT_ID: ""  # Populated from client.id
+    CLIENT_ID: "" # Populated from client.id
 
 # ───────────────────────────────────────────────────────────────────────────
 # RBAC - Service Account and Permissions
@@ -238,7 +239,16 @@ rbac:
   clusterRole:
     rules:
       - apiGroups: [""]
-        resources: ["pods", "services", "endpoints", "nodes", "events", "namespaces", "configmaps"]
+        resources:
+          [
+            "pods",
+            "services",
+            "endpoints",
+            "nodes",
+            "events",
+            "namespaces",
+            "configmaps",
+          ]
         verbs: ["get", "list", "watch"]
       - apiGroups: ["events.k8s.io"]
         resources: ["events"]
@@ -266,13 +276,13 @@ networkPolicy:
   egress:
     # Allow outbound to server
     - to:
-      - podSelector: {}
+        - podSelector: {}
       ports:
-      - protocol: TCP
-        port: 443
+        - protocol: TCP
+          port: 443
     # Allow DNS
     - to:
-      - namespaceSelector: {}
+        - namespaceSelector: {}
       ports:
-      - protocol: UDP
-        port: 53
+        - protocol: UDP
+          port: 53
