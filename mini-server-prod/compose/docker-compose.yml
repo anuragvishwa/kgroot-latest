@@ -149,7 +149,7 @@ services:
   # ============================================================================
   alerts-enricher:
     build:
-      context: ../alerts-enricher
+      context: ../../alerts-enricher
       dockerfile: Dockerfile
     container_name: kg-alerts-enricher
     depends_on:
@@ -177,7 +177,7 @@ services:
   # ============================================================================
   graph-builder:
     build:
-      context: ../kg
+      context: ../../kg
       dockerfile: Dockerfile
     container_name: kg-graph-builder
     depends_on:
@@ -234,7 +234,7 @@ services:
   # ============================================================================
   kg-api:
     build:
-      context: ../kg-api
+      context: ../../kg-api
       dockerfile: Dockerfile
     container_name: kg-api
     depends_on:
