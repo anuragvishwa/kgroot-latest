@@ -39,13 +39,14 @@ for TOPIC in "${TOPICS[@]}"; do
     # This samples the latest messages, so inactive clients will be excluded
     # Note: Messages have format: {"Value": "{...}", ...}
     # The actual data is in the Value field as a JSON string
+    # We need to run jq on the host, not in the kafka container
     CLIENT_IDS=$(docker exec kg-kafka kafka-console-consumer.sh \
         --bootstrap-server localhost:9092 \
         --topic "$TOPIC" \
         --max-messages "$SAMPLE_SIZE" \
-        --timeout-ms 5000 2>/dev/null \
-        | jq -r '.Value | fromjson | .client_id // empty' 2>/dev/null \
-        | sort -u || true)
+        --timeout-ms 5000 2>/dev/null | \
+        jq -r 'select(.Value != null) | .Value | fromjson | select(.client_id != null) | .client_id' 2>/dev/null | \
+        sort -u || true)
 
     if [ -n "$CLIENT_IDS" ]; then
         echo "$CLIENT_IDS" | while read -r cid; do

@@ -33,14 +33,15 @@ for TOPIC in "${TOPICS[@]}"; do
     # Get sample messages and extract client_ids
     # Note: Messages have format: {"Value": "{...}", ...}
     # The actual data is in the Value field as a JSON string
+    # We need to run jq on the host, not in the kafka container
     CLIENT_IDS=$(docker exec kg-kafka kafka-console-consumer.sh \
         --bootstrap-server localhost:9092 \
         --topic "$TOPIC" \
         --max-messages "$SAMPLE_SIZE" \
         --from-beginning \
-        --timeout-ms 5000 2>/dev/null \
-        | jq -r '.Value | fromjson | .client_id // empty' 2>/dev/null \
-        | sort -u || true)
+        --timeout-ms 5000 2>/dev/null | \
+        jq -r 'select(.Value != null) | .Value | fromjson | select(.client_id != null) | .client_id' 2>/dev/null | \
+        sort -u || true)
 
     if [ -z "$CLIENT_IDS" ]; then
         echo "   ⚠️  No client_id found in messages"
