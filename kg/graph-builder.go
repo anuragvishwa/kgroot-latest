@@ -28,6 +28,7 @@ import (
 type ResourceRecord struct {
 	Op        string            `json:"op"`
 	At        time.Time         `json:"at"`
+	ClientID  string            `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Cluster   string            `json:"cluster"`
 	Kind      string            `json:"kind"`
 	UID       string            `json:"uid"`
@@ -46,19 +47,21 @@ type OwnerRef struct{ Kind, Name string }
 
 // state.k8s.topology
 type EdgeRecord struct {
-	Op      string    `json:"op"`
-	At      time.Time `json:"at"`
-	Cluster string    `json:"cluster"`
-	ID      string    `json:"id"`
-	From    string    `json:"from"`
-	To      string    `json:"to"`
-	Type    string    `json:"type"` // SELECTS | RUNS_ON | CONTROLS | ...
+	Op       string    `json:"op"`
+	At       time.Time `json:"at"`
+	ClientID string    `json:"client_id,omitempty"` // Multi-tenant: client identifier
+	Cluster  string    `json:"cluster"`
+	ID       string    `json:"id"`
+	From     string    `json:"from"`
+	To       string    `json:"to"`
+	Type     string    `json:"type"` // SELECTS | RUNS_ON | CONTROLS | ...
 }
 
 // events.normalized
 type EventNormalized struct {
 	EventID   string       `json:"event_id"`
 	EventTime string       `json:"event_time"`
+	ClientID  string       `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Etype     string       `json:"etype"`
 	Severity  string       `json:"severity"`
 	Reason    string       `json:"reason"`
@@ -77,6 +80,7 @@ type EventSubject struct {
 type LogNormalized struct {
 	EventID   string       `json:"event_id"`
 	EventTime string       `json:"event_time"`
+	ClientID  string       `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Etype     string       `json:"etype"`   // "k8s.log"
 	Severity  string       `json:"severity"`// INFO/WARNING/ERROR/FATAL
 	Message   string       `json:"message"` // normalized text
@@ -95,6 +99,7 @@ type LogNormalized struct {
 type PromTargetRecord struct {
 	Op         string            `json:"op"` // UPSERT/DELETE (tombstone = Value=nil)
 	At         time.Time         `json:"at"`
+	ClientID   string            `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Cluster    string            `json:"cluster"`
 	Labels     map[string]string `json:"labels"`
 	ScrapeURL  string            `json:"scrapeUrl"`
@@ -107,6 +112,7 @@ type PromTargetRecord struct {
 type RuleRecord struct {
 	Op          string            `json:"op"`
 	At          time.Time         `json:"at"`
+	ClientID    string            `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Cluster     string            `json:"cluster"`
 	Group       string            `json:"group"`
 	Rule        string            `json:"rule"`
@@ -257,6 +263,10 @@ func (g *Graph) EnsureSchema(ctx context.Context) error {
 
 		// ENHANCED: Incident clustering support
 		`CREATE INDEX inc_resource IF NOT EXISTS FOR (i:Incident) ON (i.resource_id, i.window_start)`,
+
+		// MULTI-TENANT: Index for client_id filtering
+		`CREATE INDEX res_client_id IF NOT EXISTS FOR (r:Resource) ON (r.client_id)`,
+		`CREATE INDEX epi_client_id IF NOT EXISTS FOR (e:Episodic) ON (e.client_id)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
@@ -324,6 +334,7 @@ func (g *Graph) UpsertResource(ctx context.Context, rec ResourceRecord) error {
         "ns":          rec.Namespace,
         "name":        rec.Name,
         "cluster":     rec.Cluster,
+        "client_id":   rec.ClientID, // Multi-tenant: store client_id
         "labels_kv":   labelsToKV(rec.Labels),
         "labels_json": toJSON(rec.Labels),
         "status_json": toJSON(rec.Status),
@@ -336,10 +347,11 @@ func (g *Graph) UpsertResource(ctx context.Context, rec ResourceRecord) error {
 
     kindLabel := safeLabelName(ifEmpty(rec.Kind, "Unknown"))
 
-    // 👇 keep only this one
+    // Multi-tenant: Include client_id in node properties
     cy := fmt.Sprintf(`
 MERGE (r:Resource:%s {rid:$rid})
 SET r.kind=$kind, r.uid=$uid, r.ns=$ns, r.name=$name, r.cluster=$cluster,
+    r.client_id=$client_id,
     r.labels_kv=$labels_kv, r.labels_json=$labels_json,
     r.status_json=$status_json, r.spec_json=$spec_json,
     r.node=$node, r.podIP=$podIP, r.image=$image,
@@ -834,6 +846,7 @@ func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int)
 type handler struct {
 	graph     *Graph
 	rcaWindow int
+	clientID  string // Multi-tenant: filter messages by client_id
 	// topics
 	resTopic, topoTopic, evtTopic string
 	logsTopic                     string
@@ -884,6 +897,12 @@ func (h *handler) handleResource(msg *sarama.ConsumerMessage) error {
 	if err := json.Unmarshal(msg.Value, &rec); err != nil {
 		return err
 	}
+
+	// Multi-tenant: filter by client_id if configured
+	if h.clientID != "" && rec.ClientID != "" && rec.ClientID != h.clientID {
+		return nil // Skip messages from other clients
+	}
+
 	if strings.EqualFold(rec.Op, "DELETE") {
 		return h.graph.DeleteResourceByKey(context.Background(), string(msg.Key))
 	}
@@ -919,6 +938,12 @@ func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
 	if err := json.Unmarshal(msg.Value, &ev); err != nil {
 		return err
 	}
+
+	// Multi-tenant: filter by client_id if configured
+	if h.clientID != "" && ev.ClientID != "" && ev.ClientID != h.clientID {
+		return nil // Skip messages from other clients
+	}
+
 	if ev.EventID == "" {
 		ev.EventID = string(msg.Key)
 	}
@@ -978,6 +1003,11 @@ func (h *handler) handleLog(msg *sarama.ConsumerMessage) error {
 	var lr LogNormalized
 	if err := json.Unmarshal(msg.Value, &lr); err != nil {
 		return err
+	}
+
+	// Multi-tenant: filter by client_id if configured
+	if h.clientID != "" && lr.ClientID != "" && lr.ClientID != h.clientID {
+		return nil // Skip messages from other clients
 	}
 
 	// filter: only high-signal to avoid graph bloat
@@ -1230,6 +1260,12 @@ func (h *handler) handlePromTarget(msg *sarama.ConsumerMessage) error {
 	if err := json.Unmarshal(msg.Value, &rec); err != nil {
 		return err
 	}
+
+	// Multi-tenant: filter by client_id if configured
+	if h.clientID != "" && rec.ClientID != "" && rec.ClientID != h.clientID {
+		return nil // Skip messages from other clients
+	}
+
 	if strings.EqualFold(rec.Op, "DELETE") {
 		return h.graph.DeletePromTargetByKey(context.Background(), key)
 	}
@@ -1245,6 +1281,12 @@ func (h *handler) handleRule(msg *sarama.ConsumerMessage) error {
 	if err := json.Unmarshal(msg.Value, &rec); err != nil {
 		return err
 	}
+
+	// Multi-tenant: filter by client_id if configured
+	if h.clientID != "" && rec.ClientID != "" && rec.ClientID != h.clientID {
+		return nil // Skip messages from other clients
+	}
+
 	if strings.EqualFold(rec.Op, "DELETE") {
 		return nil
 	}
@@ -1286,7 +1328,14 @@ func main() {
 	}
 
 	brokers := strings.Split(getenv("KAFKA_BROKERS", "localhost:9092"), ",")
+
+	// Multi-tenant: Support client-specific consumer groups
+	clientID := getenv("CLIENT_ID", "")
 	group := getenv("KAFKA_GROUP", "kg-builder")
+	if clientID != "" {
+		group = fmt.Sprintf("%s-%s", group, clientID)
+		log.Printf("multi-tenant mode enabled: client_id=%s, consumer_group=%s", clientID, group)
+	}
 
 	neo4jURI := getenv("NEO4J_URI", "neo4j://localhost:7687")
 	neo4jUser := getenv("NEO4J_USER", "neo4j")
@@ -1315,7 +1364,12 @@ func main() {
 	cfg.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRange
 	cfg.Consumer.Offsets.Initial = sarama.OffsetNewest // set to Oldest for full backfill on first run
 	cfg.Consumer.Return.Errors = true
-	cfg.ClientID = "kg-builder"
+	// Multi-tenant: Use client-specific Kafka client ID
+	kafkaClientID := "kg-builder"
+	if clientID != "" {
+		kafkaClientID = fmt.Sprintf("kg-builder-%s", clientID)
+	}
+	cfg.ClientID = kafkaClientID
 
 	cg, err := sarama.NewConsumerGroup(brokers, group, cfg)
 	if err != nil {
@@ -1326,6 +1380,7 @@ func main() {
 	h := &handler{
 		graph:         g,
 		rcaWindow:     rcaWin,
+		clientID:      clientID, // Multi-tenant: filter messages by client_id
 		resTopic:      topicRes,
 		topoTopic:     topicTopo,
 		evtTopic:      topicEvt,

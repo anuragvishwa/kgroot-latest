@@ -64,6 +64,7 @@ type TargetRecord struct {
 type ResourceRecord struct {
 	Op        string            `json:"op"` // "UPSERT" or "DELETE"
 	At        time.Time         `json:"at"`
+	ClientID  string            `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Cluster   string            `json:"cluster"`
 	Kind      string            `json:"kind"`
 	UID       string            `json:"uid"`
@@ -89,13 +90,14 @@ type OwnerRef struct {
 }
 
 type EdgeRecord struct {
-	Op      string    `json:"op"` // "UPSERT" or "DELETE"
-	At      time.Time `json:"at"`
-	Cluster string    `json:"cluster"`
-	ID      string    `json:"id"`
-	From    string    `json:"from"`
-	To      string    `json:"to"`
-	Type    string    `json:"type"` // RUNS_ON, SELECTS, CONTROLS
+	Op       string    `json:"op"` // "UPSERT" or "DELETE"
+	At       time.Time `json:"at"`
+	ClientID string    `json:"client_id,omitempty"` // Multi-tenant: client identifier
+	Cluster  string    `json:"cluster"`
+	ID       string    `json:"id"`
+	From     string    `json:"from"`
+	To       string    `json:"to"`
+	Type     string    `json:"type"` // RUNS_ON, SELECTS, CONTROLS
 }
 
 // ===== Edge/index state =====
@@ -842,6 +844,11 @@ func main() {
 	topicRes := getenv("TOPIC_STATE", "state.k8s.resource")
 	topicTopo := getenv("TOPIC_TOPO", "state.k8s.topology")
 	clientID := getenv("KAFKA_CLIENT_ID", "state-watcher")
+	// Multi-tenant: Read CLIENT_ID from environment
+	tenantClientID := getenv("CLIENT_ID", "")
+	if tenantClientID != "" {
+		log.Printf("multi-tenant mode: client_id=%s", tenantClientID)
+	}
 	promURL   := getenv("PROM_URL", "http://kube-prometheus-stack-prometheus.monitoring.svc:9090")
     topicProm := getenv("TOPIC_PROM_TARGETS", "state.prom.targets")
     promTick  := 30 * time.Second

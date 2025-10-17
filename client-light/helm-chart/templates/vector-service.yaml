@@ -1,4 +1,4 @@
-{{- if and .Values.vector.enabled .Values.alertsWebhook.enabled -}}
+{{- if .Values.vector.enabled -}}
 ---
 apiVersion: v1
 kind: Service
@@ -11,10 +11,12 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - name: webhook
+    {{- if .Values.alertsWebhook.enabled }}
+    - name: alerts-webhook
       port: {{ .Values.alertsWebhook.port }}
       targetPort: {{ .Values.alertsWebhook.port }}
       protocol: TCP
+    {{- end }}
   selector:
     {{- include "kg-rca-agent.selectorLabels" . | nindent 4 }}
     component: vector

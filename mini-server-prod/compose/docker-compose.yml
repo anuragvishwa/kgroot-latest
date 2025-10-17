@@ -188,6 +188,9 @@ services:
     ports:
       - "9090:9090" # Prometheus metrics
     environment:
+      # Multi-tenant configuration
+      CLIENT_ID: ${CLIENT_ID:-} # Optional: Filter messages by client_id (leave empty for all clients)
+
       # Kafka configuration
       KAFKA_BROKERS: ${KAFKA_ADVERTISED_HOST}:9092
       KAFKA_GROUP: kg-builder
@@ -201,6 +204,10 @@ services:
       TOPIC_LOGS: logs.normalized
       TOPIC_EVENTS: events.normalized
       TOPIC_ALERTS: alerts.enriched
+      TOPIC_RES: state.k8s.resource
+      TOPIC_TOPO: state.k8s.topology
+      TOPIC_PROM_TARGETS: state.prom.targets
+      TOPIC_PROM_RULES: state.prom.rules
 
       # RCA configuration
       RCA_WINDOW_MIN: "15"
