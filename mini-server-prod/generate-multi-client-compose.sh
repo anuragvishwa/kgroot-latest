@@ -37,23 +37,20 @@ for TOPIC in "${TOPICS[@]}"; do
 
     # Get RECENT messages only (not from beginning) to find active clients
     # This samples the latest messages, so inactive clients will be excluded
-    # Note: Messages have format: {"Value": "{...}", ...}
-    # The actual data is in the Value field as a JSON string
-    # We need to run jq on the host, not in the kafka container
     CLIENT_IDS=$(docker exec kg-kafka kafka-console-consumer.sh \
         --bootstrap-server localhost:9092 \
         --topic "$TOPIC" \
         --max-messages "$SAMPLE_SIZE" \
         --timeout-ms 5000 2>/dev/null | \
-        jq -r 'select(.Value != null) | .Value | fromjson | select(.client_id != null) | .client_id' 2>/dev/null | \
+        jq -r 'select(.client_id != null) | .client_id' 2>/dev/null | \
         sort -u || true)
 
     if [ -n "$CLIENT_IDS" ]; then
-        echo "$CLIENT_IDS" | while read -r cid; do
+        while IFS= read -r cid; do
             if [ -n "$cid" ]; then
                 ALL_CLIENT_IDS["$cid"]=1
             fi
-        done
+        done <<< "$CLIENT_IDS"
     fi
 done
 
@@ -109,7 +106,7 @@ for client_id in "${!ALL_CLIENT_IDS[@]}"; do
   # ============================================================================
   graph-builder-${service_name}:
     build:
-      context: ../kg
+      context: ../../kg
       dockerfile: Dockerfile
     container_name: kg-graph-builder-${service_name}
     depends_on:
