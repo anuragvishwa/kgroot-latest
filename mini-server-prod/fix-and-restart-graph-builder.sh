@@ -25,8 +25,19 @@ fi
 echo "✅ Found Neo4j: $NEO4J_CONTAINER"
 
 echo ""
+echo "🔍 Extracting Neo4j password..."
+NEO4J_PASS=$(docker inspect $NEO4J_CONTAINER --format='{{range .Config.Env}}{{println .}}{{end}}' | grep NEO4J_AUTH | cut -d'/' -f2)
+
+if [ -z "$NEO4J_PASS" ]; then
+    echo "⚠️  Warning: Could not find NEO4J_AUTH, using default: anuragvishwa"
+    NEO4J_PASS="anuragvishwa"
+else
+    echo "✅ Found Neo4j password"
+fi
+
+echo ""
 echo "🔍 Finding Kafka container..."
-KAFKA_CONTAINER=$(docker ps --filter "name=kafka" --format "{{.Names}}" | head -1)
+KAFKA_CONTAINER=$(docker ps --filter "name=kafka" --format "{{.Names}}" | grep -v proxy | head -1)
 
 if [ -z "$KAFKA_CONTAINER" ]; then
     echo "❌ Error: Kafka container not found!"
@@ -60,7 +71,7 @@ docker run -d \
   -e KAFKA_GROUP="kg-builder" \
   -e NEO4J_URI="neo4j://${NEO4J_CONTAINER}:7687" \
   -e NEO4J_USER="neo4j" \
-  -e NEO4J_PASS="${NEO4J_PASSWORD:-anuragvishwa}" \
+  -e NEO4J_PASS="$NEO4J_PASS" \
   -e TOPIC_LOGS="logs.normalized" \
   -e TOPIC_EVENTS="events.normalized" \
   -e TOPIC_ALERTS="alerts.enriched" \
@@ -88,16 +99,18 @@ docker ps | grep kg-graph-builder
 
 echo ""
 echo "📝 Recent logs:"
-docker logs --tail=40 kg-graph-builder
+docker logs --tail=50 kg-graph-builder
 
 echo ""
 echo "=========================================="
-echo "✅ Done!"
+if docker logs kg-graph-builder 2>&1 | grep -q "schema ready"; then
+    echo "✅ SUCCESS! Graph-builder is running correctly!"
+else
+    echo "⚠️  Check logs above for any issues"
+fi
 echo "=========================================="
 echo ""
-echo "If you see 'schema ready' in the logs above, it's working!"
-echo ""
 echo "Next steps:"
-echo "1. Wait 30 seconds for messages to process"
+echo "1. If 'schema ready' appears above, wait 30 seconds"
 echo "2. Run: ./discover-client-ids.sh"
 echo ""
