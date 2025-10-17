@@ -31,13 +31,15 @@ for TOPIC in "${TOPICS[@]}"; do
     fi
 
     # Get sample messages and extract client_ids
+    # Note: Messages have format: {"Value": "{...}", ...}
+    # The actual data is in the Value field as a JSON string
     CLIENT_IDS=$(docker exec kg-kafka kafka-console-consumer.sh \
         --bootstrap-server localhost:9092 \
         --topic "$TOPIC" \
         --max-messages "$SAMPLE_SIZE" \
         --from-beginning \
         --timeout-ms 5000 2>/dev/null \
-        | jq -r '.client_id // empty' 2>/dev/null \
+        | jq -r '.Value | fromjson | .client_id // empty' 2>/dev/null \
         | sort -u || true)
 
     if [ -z "$CLIENT_IDS" ]; then
