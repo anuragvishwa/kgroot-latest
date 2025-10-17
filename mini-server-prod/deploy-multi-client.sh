@@ -122,7 +122,7 @@ for client_id in "${!ALL_CLIENT_IDS[@]}"; do
         -p "${PORT}:9090" \
         -e CLIENT_ID="$client_id" \
         -e KAFKA_BROKERS="${KAFKA_NAME}:9092" \
-        -e KAFKA_GROUP="kg-builder-${service_name}" \
+        -e KAFKA_GROUP="kg-builder" \
         -e NEO4J_URI="neo4j://${NEO4J_NAME}:7687" \
         -e NEO4J_USER="neo4j" \
         -e NEO4J_PASS="$NEO4J_PASS" \
