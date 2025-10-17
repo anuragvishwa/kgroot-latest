@@ -24,15 +24,25 @@ echo "Starting Graph Builders"
 echo "=========================================="
 echo ""
 
-# Extract Neo4j password from running container
+# Load Neo4j password from .env file
+if [ -f .env ]; then
+    NEO4J_PASS=$(grep "^NEO4J_PASSWORD=" .env | cut -d'=' -f2)
+    if [ -z "$NEO4J_PASS" ]; then
+        echo "❌ NEO4J_PASSWORD not found in .env file!"
+        exit 1
+    fi
+    echo "✅ Loaded Neo4j password from .env"
+else
+    echo "❌ .env file not found!"
+    exit 1
+fi
+
+# Get Neo4j container
 NEO4J_CONTAINER=$(docker ps --filter "name=neo4j" --format "{{.Names}}" | head -1)
 if [ -z "$NEO4J_CONTAINER" ]; then
     echo "❌ Neo4j container not found!"
     exit 1
 fi
-
-NEO4J_PASS=$(docker inspect $NEO4J_CONTAINER --format='{{range .Config.Env}}{{println .}}{{end}}' | grep NEO4J_AUTH | cut -d'/' -f2 || echo "anuragvishwa")
-echo "✅ Found Neo4j password"
 
 # Get Kafka container
 KAFKA_CONTAINER=$(docker ps --filter "name=kafka" --format "{{.Names}}" | grep -v proxy | head -1)
