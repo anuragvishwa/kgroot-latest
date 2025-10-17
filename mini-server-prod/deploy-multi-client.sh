@@ -94,7 +94,7 @@ echo "✅ Image built"
 echo ""
 
 # Deploy a container for each client_id
-PORT=9091
+PORT=9095  # Start from 9095 to avoid conflicts with Prometheus (9091)
 for client_id in "${!ALL_CLIENT_IDS[@]}"; do
     service_name=$(echo "$client_id" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
     container_name="kg-graph-builder-${service_name}"
