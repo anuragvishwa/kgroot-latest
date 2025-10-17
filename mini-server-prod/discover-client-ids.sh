@@ -46,12 +46,12 @@ for TOPIC in "${TOPICS[@]}"; do
         echo "   ⚠️  No client_id found in messages"
     else
         echo "   ✅ Found client_id(s):"
-        echo "$CLIENT_IDS" | while read -r cid; do
+        while IFS= read -r cid; do
             if [ -n "$cid" ]; then
                 echo "      - $cid"
                 ALL_CLIENT_IDS["$cid"]=1
             fi
-        done
+        done <<< "$CLIENT_IDS"
     fi
     echo ""
 done
