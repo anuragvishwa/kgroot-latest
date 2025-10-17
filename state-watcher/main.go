@@ -317,7 +317,7 @@ func collectServiceIPs(svc *corev1.Service) []string {
 	return ips
 }
 
-func reconcileServiceEdges(cluster string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicTopo string, svc *corev1.Service) {
+func reconcileServiceEdges(cluster string, clientID string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicTopo string, svc *corev1.Service) {
 	svcID := idFor("service", svc.Namespace, svc.Name)
 
 	if len(svc.Spec.Selector) == 0 {
@@ -348,7 +348,7 @@ func reconcileServiceEdges(cluster string, client *kubernetes.Clientset, p saram
 			parts := strings.Split(podID, ":")
 			if len(parts) != 3 { continue }
 			e := EdgeRecord{
-				Op:      "UPSERT", At: now, Cluster: cluster,
+				Op:       "UPSERT", At: now, ClientID: clientID, Cluster: cluster,
 				ID:   edgeID("service", svc.Namespace, svc.Name, "pod", parts[1], parts[2]),
 				From: idFor("service", svc.Namespace, svc.Name), To: podID, Type: "SELECTS",
 			}
@@ -368,7 +368,7 @@ func reconcileServiceEdges(cluster string, client *kubernetes.Clientset, p saram
 	}
 }
 
-func reconcilePodServiceMembership(cluster string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicTopo string, pod *corev1.Pod) {
+func reconcilePodServiceMembership(cluster string, clientID string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicTopo string, pod *corev1.Pod) {
 	services, err := client.CoreV1().Services(pod.Namespace).List(context.Background(), meta.ListOptions{})
 	if err != nil { log.Printf("pod reconcile list svcs: %v", err); return }
 	podID := idFor("pod", pod.Namespace, pod.Name)
@@ -393,7 +393,7 @@ func reconcilePodServiceMembership(cluster string, client *kubernetes.Clientset,
 		switch {
 		case match && !had:
 			e := EdgeRecord{
-				Op: "UPSERT", At: now, Cluster: cluster,
+				Op: "UPSERT", At: now, ClientID: clientID, Cluster: cluster,
 				ID: edgeID("service", svc.Namespace, svc.Name, "pod", pod.Namespace, pod.Name),
 				From: svcID, To: podID, Type: "SELECTS",
 			}
@@ -409,10 +409,11 @@ func reconcilePodServiceMembership(cluster string, client *kubernetes.Clientset,
 
 // ===== Handlers =====
 
-func pushPod(cluster string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicRes, topicTopo string, pod *corev1.Pod) {
+func pushPod(cluster string, clientID string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicRes, topicTopo string, pod *corev1.Pod) {
 	rec := ResourceRecord{
 		Op:        "UPSERT",
 		At:        time.Now().UTC(),
+		ClientID:  clientID,
 		Cluster:   cluster,
 		Kind:      "Pod",
 		UID:       string(pod.UID),
@@ -431,7 +432,7 @@ func pushPod(cluster string, client *kubernetes.Clientset, p sarama.AsyncProduce
 	// Pod -> Node
 	if pod.Spec.NodeName != "" {
 		e := EdgeRecord{
-			Op: "UPSERT", At: rec.At, Cluster: cluster,
+			Op: "UPSERT", At: rec.At, ClientID: clientID, Cluster: cluster,
 			ID: edgeID("pod", pod.Namespace, pod.Name, "node", "", pod.Spec.NodeName),
 			From: idFor("pod", pod.Namespace, pod.Name), To: idFor("node", "", pod.Spec.NodeName), Type: "RUNS_ON",
 		}
@@ -446,7 +447,7 @@ func pushPod(cluster string, client *kubernetes.Clientset, p sarama.AsyncProduce
 	if ctrlKind != "" {
 		ctrlID := idFor(ctrlKind, pod.Namespace, ctrlName)
 		edge := EdgeRecord{
-			Op: "UPSERT", At: rec.At, Cluster: cluster,
+			Op: "UPSERT", At: rec.At, ClientID: clientID, Cluster: cluster,
 			ID:   edgeID(ctrlKind, pod.Namespace, ctrlName, "pod", pod.Namespace, pod.Name),
 			From: ctrlID, To: idFor("pod", pod.Namespace, pod.Name), Type: "CONTROLS",
 		}
@@ -467,12 +468,12 @@ func pushPod(cluster string, client *kubernetes.Clientset, p sarama.AsyncProduce
 	}
 
 	// Service membership reconcile for this pod
-	reconcilePodServiceMembership(cluster, client, p, topicTopo, pod)
+	reconcilePodServiceMembership(cluster, clientID, client, p, topicTopo, pod)
 
 	sendJSON(p, topicRes, keyFor("Pod", rec.UID), rec)
 }
 
-func deletePod(cluster string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicRes, topicTopo string, pod *corev1.Pod) {
+func deletePod(cluster string, clientID string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicRes, topicTopo string, pod *corev1.Pod) {
 	// Tombstone controller edge
 	podID := idFor("pod", pod.Namespace, pod.Name)
 	if prev, ok := podIdx.get(podID); ok && prev != "" {
@@ -497,10 +498,11 @@ func deletePod(cluster string, client *kubernetes.Clientset, p sarama.AsyncProdu
 	sendJSON(p, topicRes, keyFor("Pod", string(pod.UID)), nil)
 }
 
-func pushService(cluster string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicRes, topicTopo string, svc *corev1.Service) {
+func pushService(cluster string, clientID string, client *kubernetes.Clientset, p sarama.AsyncProducer, topicRes, topicTopo string, svc *corev1.Service) {
 	rec := ResourceRecord{
 		Op:        "UPSERT",
 		At:        time.Now().UTC(),
+		ClientID:  clientID,
 		Cluster:   cluster,
 		Kind:      "Service",
 		UID:       string(svc.UID),
@@ -515,7 +517,7 @@ func pushService(cluster string, client *kubernetes.Clientset, p sarama.AsyncPro
 		ServiceIPs: collectServiceIPs(svc),
 		Spec: map[string]any{"type": svc.Spec.Type, "ports": svc.Spec.Ports, "ipFamilyPolicy": svc.Spec.IPFamilyPolicy},
 	}
-	reconcileServiceEdges(cluster, client, p, topicTopo, svc)
+	reconcileServiceEdges(cluster, clientID, client, p, topicTopo, svc)
 	sendJSON(p, topicRes, keyFor("Service", rec.UID), rec)
 }
 
@@ -532,10 +534,11 @@ func deleteService(p sarama.AsyncProducer, topicRes, topicTopo string, svc *core
 	sendJSON(p, topicRes, keyFor("Service", string(svc.UID)), nil)
 }
 
-func pushDeployment(cluster string, p sarama.AsyncProducer, topicRes, topicTopo string, d *appsv1.Deployment) {
+func pushDeployment(cluster string, clientID string, p sarama.AsyncProducer, topicRes, topicTopo string, d *appsv1.Deployment) {
 	rec := ResourceRecord{
 		Op:        "UPSERT",
 		At:        time.Now().UTC(),
+		ClientID:  clientID,
 		Cluster:   cluster,
 		Kind:      "Deployment",
 		UID:       string(d.UID),
@@ -553,10 +556,11 @@ func deleteDeployment(p sarama.AsyncProducer, topicRes string, d *appsv1.Deploym
 	sendJSON(p, topicRes, keyFor("Deployment", string(d.UID)), nil)
 }
 
-func pushReplicaSet(cluster string, p sarama.AsyncProducer, topicRes, topicTopo string, rs *appsv1.ReplicaSet) {
+func pushReplicaSet(cluster string, clientID string, p sarama.AsyncProducer, topicRes, topicTopo string, rs *appsv1.ReplicaSet) {
 	rec := ResourceRecord{
 		Op:        "UPSERT",
 		At:        time.Now().UTC(),
+		ClientID:  clientID,
 		Cluster:   cluster,
 		Kind:      "ReplicaSet",
 		UID:       string(rs.UID),
@@ -569,7 +573,7 @@ func pushReplicaSet(cluster string, p sarama.AsyncProducer, topicRes, topicTopo 
 	}
 	if depName, ok := owningDeploymentName(rs.OwnerReferences); ok {
 		e := EdgeRecord{
-			Op: "UPSERT", At: rec.At, Cluster: cluster,
+			Op: "UPSERT", At: rec.At, ClientID: clientID, Cluster: cluster,
 			ID: edgeID("deployment", rs.Namespace, depName, "replicaset", rs.Namespace, rs.Name),
 			From: idFor("deployment", rs.Namespace, depName), To: idFor("replicaset", rs.Namespace, rs.Name), Type: "CONTROLS",
 		}
@@ -582,10 +586,11 @@ func deleteReplicaSet(p sarama.AsyncProducer, topicRes string, rs *appsv1.Replic
 	sendJSON(p, topicRes, keyFor("ReplicaSet", string(rs.UID)), nil)
 }
 
-func pushDaemonSet(cluster string, p sarama.AsyncProducer, topicRes string, ds *appsv1.DaemonSet) {
+func pushDaemonSet(cluster string, clientID string, p sarama.AsyncProducer, topicRes string, ds *appsv1.DaemonSet) {
 	rec := ResourceRecord{
 		Op:        "UPSERT",
 		At:        time.Now().UTC(),
+		ClientID:  clientID,
 		Cluster:   cluster,
 		Kind:      "DaemonSet",
 		UID:       string(ds.UID),
@@ -608,10 +613,11 @@ func deleteDaemonSet(p sarama.AsyncProducer, topicRes string, ds *appsv1.DaemonS
 	sendJSON(p, topicRes, keyFor("DaemonSet", string(ds.UID)), nil)
 }
 
-func pushJob(cluster string, p sarama.AsyncProducer, topicRes, topicTopo string, j *batchv1.Job) {
+func pushJob(cluster string, clientID string, p sarama.AsyncProducer, topicRes, topicTopo string, j *batchv1.Job) {
 	rec := ResourceRecord{
 		Op:        "UPSERT",
 		At:        time.Now().UTC(),
+		ClientID:  clientID,
 		Cluster:   cluster,
 		Kind:      "Job",
 		UID:       string(j.UID),
@@ -631,7 +637,7 @@ func pushJob(cluster string, p sarama.AsyncProducer, topicRes, topicTopo string,
 	// CronJob -> Job
 	if cjName, ok := owningCronJobName(j.OwnerReferences); ok {
 		e := EdgeRecord{
-			Op: "UPSERT", At: rec.At, Cluster: cluster,
+			Op: "UPSERT", At: rec.At, ClientID: clientID, Cluster: cluster,
 			ID:   edgeID("cronjob", j.Namespace, cjName, "job", j.Namespace, j.Name),
 			From: idFor("cronjob", j.Namespace, cjName), To: idFor("job", j.Namespace, j.Name), Type: "CONTROLS",
 		}
@@ -644,10 +650,11 @@ func deleteJob(p sarama.AsyncProducer, topicRes string, j *batchv1.Job) {
 	sendJSON(p, topicRes, keyFor("Job", string(j.UID)), nil)
 }
 
-func pushCronJob(cluster string, p sarama.AsyncProducer, topicRes string, cj *batchv1.CronJob) {
+func pushCronJob(cluster string, clientID string, p sarama.AsyncProducer, topicRes string, cj *batchv1.CronJob) {
 	rec := ResourceRecord{
 		Op:        "UPSERT",
 		At:        time.Now().UTC(),
+		ClientID:  clientID,
 		Cluster:   cluster,
 		Kind:      "CronJob",
 		UID:       string(cj.UID),
@@ -668,16 +675,17 @@ func deleteCronJob(p sarama.AsyncProducer, topicRes string, cj *batchv1.CronJob)
 	sendJSON(p, topicRes, keyFor("CronJob", string(cj.UID)), nil)
 }
 
-func pushNode(cluster string, p sarama.AsyncProducer, topicRes string, n *corev1.Node) {
+func pushNode(cluster string, clientID string, p sarama.AsyncProducer, topicRes string, n *corev1.Node) {
 	rec := ResourceRecord{
-		Op:      "UPSERT",
-		At:      time.Now().UTC(),
-		Cluster: cluster,
-		Kind:    "Node",
-		UID:     string(n.UID),
-		Name:    n.Name,
-		Labels:  n.Labels,
-		Status:  map[string]any{"ready": nodeReady(n)},
+		Op:       "UPSERT",
+		At:       time.Now().UTC(),
+		ClientID: clientID,
+		Cluster:  cluster,
+		Kind:     "Node",
+		UID:      string(n.UID),
+		Name:     n.Name,
+		Labels:   n.Labels,
+		Status:   map[string]any{"ready": nodeReady(n)},
 	}
 	sendJSON(p, topicRes, keyFor("Node", rec.UID), rec)
 }
@@ -688,30 +696,30 @@ func deleteNode(p sarama.AsyncProducer, topicRes string, n *corev1.Node) {
 
 // ===== Leader-runner =====
 
-func runWatchers(ctx context.Context, cluster string, client *kubernetes.Clientset, producer sarama.AsyncProducer, topicRes, topicTopo string) {
+func runWatchers(ctx context.Context, cluster string, clientID string, client *kubernetes.Clientset, producer sarama.AsyncProducer, topicRes, topicTopo string) {
 	// Periodic resync to reconcile Service<->Pod edges even without direct events
 	factory := informers.NewSharedInformerFactory(client, 30*time.Second)
 
 	// Pods
 	podInf := factory.Core().V1().Pods().Informer()
 	podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) { pushPod(cluster, client, producer, topicRes, topicTopo, obj.(*corev1.Pod)) },
-		UpdateFunc: func(_, newObj any) { pushPod(cluster, client, producer, topicRes, topicTopo, newObj.(*corev1.Pod)) },
+		AddFunc: func(obj any) { pushPod(cluster, clientID, client, producer, topicRes, topicTopo, obj.(*corev1.Pod)) },
+		UpdateFunc: func(_, newObj any) { pushPod(cluster, clientID, client, producer, topicRes, topicTopo, newObj.(*corev1.Pod)) },
 		DeleteFunc: func(obj any) {
 			pod, ok := obj.(*corev1.Pod)
 			if !ok {
 				tomb, _ := obj.(cache.DeletedFinalStateUnknown)
 				if p, ok := tomb.Obj.(*corev1.Pod); ok { pod = p }
 			}
-			if pod != nil { deletePod(cluster, client, producer, topicRes, topicTopo, pod) }
+			if pod != nil { deletePod(cluster, clientID, client, producer, topicRes, topicTopo, pod) }
 		},
 	})
 
 	// Services
 	svcInf := factory.Core().V1().Services().Informer()
 	svcInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) { pushService(cluster, client, producer, topicRes, topicTopo, obj.(*corev1.Service)) },
-		UpdateFunc: func(_, newObj any) { pushService(cluster, client, producer, topicRes, topicTopo, newObj.(*corev1.Service)) },
+		AddFunc: func(obj any) { pushService(cluster, clientID, client, producer, topicRes, topicTopo, obj.(*corev1.Service)) },
+		UpdateFunc: func(_, newObj any) { pushService(cluster, clientID, client, producer, topicRes, topicTopo, newObj.(*corev1.Service)) },
 		DeleteFunc: func(obj any) {
 			svc, ok := obj.(*corev1.Service)
 			if !ok {
@@ -725,8 +733,8 @@ func runWatchers(ctx context.Context, cluster string, client *kubernetes.Clients
 	// Deployments
 	depInf := factory.Apps().V1().Deployments().Informer()
 	depInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) { pushDeployment(cluster, producer, topicRes, topicTopo, obj.(*appsv1.Deployment)) },
-		UpdateFunc: func(_, newObj any) { pushDeployment(cluster, producer, topicRes, topicTopo, newObj.(*appsv1.Deployment)) },
+		AddFunc: func(obj any) { pushDeployment(cluster, clientID, producer, topicRes, topicTopo, obj.(*appsv1.Deployment)) },
+		UpdateFunc: func(_, newObj any) { pushDeployment(cluster, clientID, producer, topicRes, topicTopo, newObj.(*appsv1.Deployment)) },
 		DeleteFunc: func(obj any) {
 			d, ok := obj.(*appsv1.Deployment)
 			if !ok {
@@ -740,8 +748,8 @@ func runWatchers(ctx context.Context, cluster string, client *kubernetes.Clients
 	// ReplicaSets
 	rsInf := factory.Apps().V1().ReplicaSets().Informer()
 	rsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) { pushReplicaSet(cluster, producer, topicRes, topicTopo, obj.(*appsv1.ReplicaSet)) },
-		UpdateFunc: func(_, newObj any) { pushReplicaSet(cluster, producer, topicRes, topicTopo, newObj.(*appsv1.ReplicaSet)) },
+		AddFunc: func(obj any) { pushReplicaSet(cluster, clientID, producer, topicRes, topicTopo, obj.(*appsv1.ReplicaSet)) },
+		UpdateFunc: func(_, newObj any) { pushReplicaSet(cluster, clientID, producer, topicRes, topicTopo, newObj.(*appsv1.ReplicaSet)) },
 		DeleteFunc: func(obj any) {
 			rs, ok := obj.(*appsv1.ReplicaSet)
 			if !ok {
@@ -755,8 +763,8 @@ func runWatchers(ctx context.Context, cluster string, client *kubernetes.Clients
 	// DaemonSets
 	dsInf := factory.Apps().V1().DaemonSets().Informer()
 	dsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) { pushDaemonSet(cluster, producer, topicRes, obj.(*appsv1.DaemonSet)) },
-		UpdateFunc: func(_, newObj any) { pushDaemonSet(cluster, producer, topicRes, newObj.(*appsv1.DaemonSet)) },
+		AddFunc: func(obj any) { pushDaemonSet(cluster, clientID, producer, topicRes, obj.(*appsv1.DaemonSet)) },
+		UpdateFunc: func(_, newObj any) { pushDaemonSet(cluster, clientID, producer, topicRes, newObj.(*appsv1.DaemonSet)) },
 		DeleteFunc: func(obj any) {
 			ds, ok := obj.(*appsv1.DaemonSet)
 			if !ok {
@@ -770,8 +778,8 @@ func runWatchers(ctx context.Context, cluster string, client *kubernetes.Clients
 	// Jobs
 	jobInf := factory.Batch().V1().Jobs().Informer()
 	jobInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) { pushJob(cluster, producer, topicRes, topicTopo, obj.(*batchv1.Job)) },
-		UpdateFunc: func(_, newObj any) { pushJob(cluster, producer, topicRes, topicTopo, newObj.(*batchv1.Job)) },
+		AddFunc: func(obj any) { pushJob(cluster, clientID, producer, topicRes, topicTopo, obj.(*batchv1.Job)) },
+		UpdateFunc: func(_, newObj any) { pushJob(cluster, clientID, producer, topicRes, topicTopo, newObj.(*batchv1.Job)) },
 		DeleteFunc: func(obj any) {
 			j, ok := obj.(*batchv1.Job)
 			if !ok {
@@ -785,8 +793,8 @@ func runWatchers(ctx context.Context, cluster string, client *kubernetes.Clients
 	// CronJobs
 	cjInf := factory.Batch().V1().CronJobs().Informer()
 	cjInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) { pushCronJob(cluster, producer, topicRes, obj.(*batchv1.CronJob)) },
-		UpdateFunc: func(_, newObj any) { pushCronJob(cluster, producer, topicRes, newObj.(*batchv1.CronJob)) },
+		AddFunc: func(obj any) { pushCronJob(cluster, clientID, producer, topicRes, obj.(*batchv1.CronJob)) },
+		UpdateFunc: func(_, newObj any) { pushCronJob(cluster, clientID, producer, topicRes, newObj.(*batchv1.CronJob)) },
 		DeleteFunc: func(obj any) {
 			cj, ok := obj.(*batchv1.CronJob)
 			if !ok {
@@ -800,8 +808,8 @@ func runWatchers(ctx context.Context, cluster string, client *kubernetes.Clients
 	// Nodes
 	nodeInf := factory.Core().V1().Nodes().Informer()
 	nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) { pushNode(cluster, producer, topicRes, obj.(*corev1.Node)) },
-		UpdateFunc: func(_, newObj any) { pushNode(cluster, producer, topicRes, newObj.(*corev1.Node)) },
+		AddFunc: func(obj any) { pushNode(cluster, clientID, producer, topicRes, obj.(*corev1.Node)) },
+		UpdateFunc: func(_, newObj any) { pushNode(cluster, clientID, producer, topicRes, newObj.(*corev1.Node)) },
 		DeleteFunc: func(obj any) {
 			n, ok := obj.(*corev1.Node)
 			if !ok {
@@ -895,7 +903,7 @@ func main() {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				go runPromTargetSync(ctx, cluster, promURL, producer, topicProm, promTick)
-				runWatchers(ctx, cluster, client, producer, topicRes, topicTopo)
+				runWatchers(ctx, cluster, tenantClientID, client, producer, topicRes, topicTopo)
 			},
 			OnStoppedLeading: func() {
 				log.Printf("lost leadership, exiting")

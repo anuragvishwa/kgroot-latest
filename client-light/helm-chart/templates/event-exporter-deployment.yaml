@@ -24,6 +24,20 @@ data:
           topic: {{ .Values.client.kafka.topics.events }}
           key: "{{ .UID }}"
           compression: gzip
+          layout:
+            client_id: "{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}"
+            metadata: "{{ .Metadata }}"
+            reason: "{{ .Reason }}"
+            message: "{{ .Message }}"
+            source: "{{ .Source }}"
+            firstTimestamp: "{{ .FirstTimestamp }}"
+            lastTimestamp: "{{ .LastTimestamp }}"
+            count: "{{ .Count }}"
+            type: "{{ .Type }}"
+            eventTime: "{{ .EventTime }}"
+            reportingComponent: "{{ .ReportingComponent }}"
+            reportingInstance: "{{ .ReportingInstance }}"
+            involvedObject: "{{ .InvolvedObject }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
