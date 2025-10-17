@@ -226,6 +226,9 @@ services:
     networks:
       - kg-network
 
+  # Note: state-watcher is deployed in client K8s clusters, not on the server
+  # It produces state.k8s.resource and state.k8s.topology messages with client_id
+
   # ============================================================================
   # KG API - REST API for knowledge graph queries
   # ============================================================================
