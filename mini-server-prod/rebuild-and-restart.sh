@@ -15,7 +15,9 @@ cd "$(dirname "$0")"
 
 echo "📦 Rebuilding graph-builder with client_id support..."
 cd compose
-docker compose build graph-builder
+
+# Build the new image
+docker compose build --no-cache graph-builder
 
 echo ""
 echo "=========================================="
@@ -23,8 +25,8 @@ echo "Restarting Services"
 echo "=========================================="
 echo ""
 
-echo "🔄 Stopping old graph-builder..."
-docker compose stop graph-builder
+echo "🔄 Stopping and removing old graph-builder container..."
+docker compose rm -sf graph-builder || true
 
 echo ""
 echo "🚀 Starting updated graph-builder..."
@@ -38,6 +40,10 @@ sleep 10
 
 echo ""
 docker compose ps graph-builder
+
+echo ""
+echo "✅ Checking graph-builder logs..."
+docker compose logs --tail=20 graph-builder
 
 echo ""
 echo "=========================================="
