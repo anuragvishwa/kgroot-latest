@@ -1,4 +1,5 @@
 {{- if .Values.eventExporter.enabled -}}
+{{- $topicEvents := default "events.normalized" .Values.eventExporter.kafkaTopic -}}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -21,7 +22,7 @@ data:
         kafka:
           brokers:
             - {{ .Values.client.kafka.brokers }}
-          topic: {{ .Values.client.kafka.topics.events }}
+          topic: {{ $topicEvents }}
           key: "{{ "{{" }}- if .UID -{{ "}}" }}{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}::{{ "{{" }} .UID {{ "}}" }}{{ "{{" }}- else -{{ "}}" }}{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}::{{ "{{" }} .InvolvedObject.Namespace {{ "}}" }}/{{ "{{" }} .InvolvedObject.Name {{ "}}" }}/{{ "{{" }} .Reason {{ "}}" }}/{{ "{{" }} .EventTime {{ "}}" }}{{ "{{" }}- end -{{ "}}" }}"
           compression: gzip
           layout:

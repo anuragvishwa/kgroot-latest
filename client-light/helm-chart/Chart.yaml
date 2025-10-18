@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.14
+version: 1.0.15
 appVersion: "1.0.3"
 keywords:
   - knowledge-graph
@@ -48,6 +48,8 @@ annotations:
       description: RBAC permissions for PersistentVolumeClaims and PersistentVolumes
     - kind: added
       description: Support for raw Kafka topics for archiving unprocessed data
+    - kind: fixed
+      description: helm values no longer require client.kafka.topics events override (defaults to events.normalized)
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/signKey: |
     fingerprint: # Add GPG key fingerprint if signing releases
