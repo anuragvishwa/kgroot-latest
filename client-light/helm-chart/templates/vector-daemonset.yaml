@@ -59,7 +59,12 @@ data:
     source = '''
     # Use groupKey or externalURL as message key for partitioning
     key = string(.groupKey) ?? string(.externalURL) ?? uuid_v4()
-    .message_key = key
+    client_id = get_env_var("CLIENT_ID")
+    if is_null(client_id) || client_id == "" {
+      .message_key = key
+    } else {
+      .message_key = join!([client_id, string!(key)], "::")
+    }
     '''
 
     # Explode/unwrap Alertmanager payloads into single alerts
@@ -185,6 +190,8 @@ data:
     {{- $topicEvents := default $defaultEvents .Values.eventExporter.kafkaTopic }}
     topic = "{{ $topicEvents }}"
     compression = "gzip"
+    # Partition alerts per tenant + alert key
+    key_field = "message_key"
     [sinks.kafka_prom_alerts_norm.encoding]
     codec = "json"
     {{- if .Values.client.kafka.sasl.enabled }}
