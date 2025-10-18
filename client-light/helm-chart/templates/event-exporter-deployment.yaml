@@ -22,7 +22,7 @@ data:
           brokers:
             - {{ .Values.client.kafka.brokers }}
           topic: {{ .Values.client.kafka.topics.events }}
-          key: "{{ .UID }}"
+          key: "{{ "{{" }}- if .UID -{{ "}}" }}{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}::{{ "{{" }} .UID {{ "}}" }}{{ "{{" }}- else -{{ "}}" }}{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}::{{ "{{" }} .InvolvedObject.Namespace {{ "}}" }}/{{ "{{" }} .InvolvedObject.Name {{ "}}" }}/{{ "{{" }} .Reason {{ "}}" }}/{{ "{{" }} .EventTime {{ "}}" }}{{ "{{" }}- end -{{ "}}" }}"
           compression: gzip
           layout:
             client_id: "{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}"
