@@ -200,11 +200,18 @@ func isConstraintErr(err error) bool {
 }
 
 func splitTenantKey(key string) (tenant, raw string) {
-	parts := strings.SplitN(key, "|", 2)
-	if len(parts) == 2 && parts[0] != "" {
-		return parts[0], parts[1]
-	}
-	return "", key
+    // Support both historic "tenant|raw" and newer "tenant::raw" formats
+    if strings.Contains(key, "::") {
+        parts := strings.SplitN(key, "::", 2)
+        if len(parts) == 2 && parts[0] != "" {
+            return parts[0], parts[1]
+        }
+    }
+    parts := strings.SplitN(key, "|", 2)
+    if len(parts) == 2 && parts[0] != "" {
+        return parts[0], parts[1]
+    }
+    return "", key
 }
 func writeWithRetry(ctx context.Context, s neo4j.SessionWithContext, fn func(tx neo4j.ManagedTransaction) error) error {
 	var last error
@@ -1014,16 +1021,115 @@ func (h *handler) handleTopo(msg *sarama.ConsumerMessage) error {
 
 // ENHANCED: Event handling with RCA, severity escalation, and incident clustering
 func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
-	startTime := time.Now()
+    startTime := time.Now()
 
-	if msg.Value == nil || len(msg.Value) == 0 {
-		return nil
-	}
-	tenantFromKey, rawKey := splitTenantKey(string(msg.Key))
-	var ev EventNormalized
-	if err := json.Unmarshal(msg.Value, &ev); err != nil {
-		return err
-	}
+    if msg.Value == nil || len(msg.Value) == 0 {
+        return nil
+    }
+    tenantFromKey, rawKey := splitTenantKey(string(msg.Key))
+    var ev EventNormalized
+    if err := json.Unmarshal(msg.Value, &ev); err != nil {
+        return err
+    }
+
+    // Backward/forward compatibility: if incoming message is not in normalized schema
+    // (missing etype/subject), try to map from kubernetes-event-exporter payload.
+    if strings.TrimSpace(ev.Etype) == "" || (ev.Subject == (EventSubject{})) {
+        // Lightweight shape for exporter payload
+        var raw struct {
+            ClientID       string                 `json:"client_id"`
+            Metadata       map[string]any         `json:"metadata"`
+            Reason         string                 `json:"reason"`
+            Message        string                 `json:"message"`
+            Type           string                 `json:"type"`
+            EventTime      any                    `json:"eventTime"`
+            FirstTimestamp string                 `json:"firstTimestamp"`
+            LastTimestamp  string                 `json:"lastTimestamp"`
+            InvolvedObject struct {
+                Kind      string `json:"kind"`
+                UID       string `json:"uid"`
+                Namespace string `json:"namespace"`
+                Name      string `json:"name"`
+            } `json:"involvedObject"`
+        }
+        if err := json.Unmarshal(msg.Value, &raw); err == nil {
+            // Fill client_id from payload or Kafka key
+            if ev.ClientID == "" {
+                ev.ClientID = raw.ClientID
+            }
+            if ev.ClientID == "" && tenantFromKey != "" {
+                ev.ClientID = tenantFromKey
+            }
+
+            // Normalize event_time
+            et := ""
+            switch t := raw.EventTime.(type) {
+            case string:
+                et = t
+            case nil:
+                et = ""
+            default:
+                // Fallback to RFC3339 if possible
+                et = fmt.Sprint(t)
+            }
+            if et == "" {
+                if raw.LastTimestamp != "" {
+                    et = raw.LastTimestamp
+                } else if raw.FirstTimestamp != "" {
+                    et = raw.FirstTimestamp
+                } else {
+                    et = time.Now().UTC().Format(time.RFC3339Nano)
+                }
+            }
+            ev.EventTime = et
+
+            // Event type
+            ev.Etype = "k8s.event"
+
+            // Severity: map from Type (Normal/Warning) to INFO/WARNING, else uppercased
+            tp := strings.ToUpper(strings.TrimSpace(raw.Type))
+            switch tp {
+            case "NORMAL":
+                ev.Severity = "INFO"
+            case "WARNING":
+                ev.Severity = "WARNING"
+            case "ERROR", "FATAL", "CRITICAL":
+                ev.Severity = tp
+            default:
+                if tp == "" {
+                    ev.Severity = "INFO"
+                } else {
+                    ev.Severity = tp
+                }
+            }
+
+            // Reason/message
+            ev.Reason = ifEmpty(strings.TrimSpace(raw.Reason), "Unknown")
+            ev.Message = raw.Message
+
+            // Subject
+            ev.Subject = EventSubject{
+                Kind: ifEmpty(raw.InvolvedObject.Kind, "Unknown"),
+                UID:  raw.InvolvedObject.UID,
+                NS:   raw.InvolvedObject.Namespace,
+                Name: raw.InvolvedObject.Name,
+            }
+
+            // EventID: prefer Metadata.uid or Kafka key, fallback to hash of time+reason+subject
+            if ev.EventID == "" {
+                if rawUID, _ := raw.Metadata["uid"].(string); rawUID != "" {
+                    ev.EventID = rawUID
+                } else if rawKey != "" {
+                    ev.EventID = rawKey
+                } else {
+                    h := sha1.New()
+                    ioStr := fmt.Sprintf("%s|%s|%s/%s|%s", ev.EventTime, ev.Etype, ev.Subject.NS, ev.Subject.Name, ev.Reason)
+                    _, _ = h.Write([]byte(ioStr))
+                    ev.EventID = hex.EncodeToString(h.Sum(nil))
+                }
+            }
+        }
+    }
 
 	// Multi-tenant: filter by client_id if configured
 	if ev.ClientID == "" && tenantFromKey != "" {
