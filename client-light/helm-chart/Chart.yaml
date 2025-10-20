@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.17
+version: 1.0.18
 appVersion: "1.0.4"
 keywords:
   - knowledge-graph
@@ -58,7 +58,7 @@ annotations:
     url: # Add GPG public key URL if signing releases
   artifacthub.io/images: |
     - name: alert-receiver
-      image: anuragvishwa/kg-alert-receiver:1.0.17
+      image: anuragvishwa/kg-alert-receiver:1.0.18
     - name: state-watcher
       image: anuragvishwa/kg-state-watcher:1.0.2
     - name: event-exporter
