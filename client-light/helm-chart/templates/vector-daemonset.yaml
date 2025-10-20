@@ -33,10 +33,10 @@ data:
     .event_time = now()
     .etype = "k8s.log"
 
-    # Extract pod info
-    pod_uid = string!(.kubernetes.pod_uid)
-    pod_ns = string!(.kubernetes.pod_namespace)
-    pod_name = string!(.kubernetes.pod_name)
+    # Extract pod info safely (use ?? for fallback instead of !)
+    pod_uid = string(.kubernetes.pod_uid) ?? ""
+    pod_ns = string(.kubernetes.pod_namespace) ?? "default"
+    pod_name = string(.kubernetes.pod_name) ?? "unknown"
 
     # Create subject with uid
     .subject = {
