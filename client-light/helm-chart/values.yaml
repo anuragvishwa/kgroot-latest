@@ -211,7 +211,7 @@ alertReceiver:
   enabled: true
   image:
     repository: anuragvishwa/kg-alert-receiver
-    tag: "1.0.9"
+    tag: "1.0.17"
     pullPolicy: Always
 
   replicaCount: 2

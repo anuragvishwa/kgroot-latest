@@ -58,7 +58,7 @@ annotations:
     url: # Add GPG public key URL if signing releases
   artifacthub.io/images: |
     - name: alert-receiver
-      image: anuragvishwa/kg-alert-receiver:1.0.9
+      image: anuragvishwa/kg-alert-receiver:1.0.17
     - name: state-watcher
       image: anuragvishwa/kg-state-watcher:1.0.2
     - name: event-exporter
