@@ -1566,12 +1566,14 @@ func main() {
 
 	brokers := strings.Split(getenv("KAFKA_BROKERS", "localhost:9092"), ",")
 
-	// Multi-tenant: Support client-specific consumer groups
+	// Multi-tenant: Support client-specific consumer groups OR single-instance mode
 	clientID := getenv("CLIENT_ID", "")
 	group := getenv("KAFKA_GROUP", "kg-builder")
 	if clientID != "" {
 		group = fmt.Sprintf("%s-%s", group, clientID)
-		log.Printf("multi-tenant mode enabled: client_id=%s, consumer_group=%s", clientID, group)
+		log.Printf("single-tenant mode: client_id=%s, consumer_group=%s", clientID, group)
+	} else {
+		log.Printf("multi-tenant mode: processing all clients, consumer_group=%s", group)
 	}
 
 	neo4jURI := getenv("NEO4J_URI", "neo4j://localhost:7687")
