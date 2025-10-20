@@ -278,7 +278,8 @@ func tenantKey(clientID, key string) string {
 	if key == "" {
 		return clientID
 	}
-	return clientID + "|" + key
+	// Use :: separator for consistency with alert-receiver and Vector
+	return clientID + "::" + key
 }
 
 func sendJSON(p sarama.AsyncProducer, clientID, topic, key string, v any) {

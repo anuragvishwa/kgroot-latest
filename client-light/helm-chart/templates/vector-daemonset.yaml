@@ -31,16 +31,28 @@ data:
     source = '''
     .client_id = "{{ .Values.client.id }}"
     .event_time = now()
+    .etype = "k8s.log"
 
-    # Extract pod_uid for use as message key (for Kafka partitioning)
-    pod_uid, err = get_env_var("HOSTNAME")
-    if is_null(pod_uid) || pod_uid == "" {
-      # Fallback: use pod namespace + name as key
-      pod_ns = string!(.kubernetes.pod_namespace)
-      pod_name = string!(.kubernetes.pod_name)
-      pod_uid = join!([pod_ns, pod_name], "/")
+    # Extract pod info
+    pod_uid = string!(.kubernetes.pod_uid)
+    pod_ns = string!(.kubernetes.pod_namespace)
+    pod_name = string!(.kubernetes.pod_name)
+
+    # Create subject with uid
+    .subject = {
+      "kind": "Pod",
+      "uid": pod_uid,
+      "ns": pod_ns,
+      "name": pod_name
     }
+
+    # Keep pod_uid for backward compatibility
     .pod_uid = pod_uid
+    .pod_namespace = pod_ns
+    .pod_name = pod_name
+
+    # Create message key with client_id prefix
+    .message_key = join!(["{{ .Values.client.id }}", pod_uid], "::")
     '''
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -146,8 +158,8 @@ data:
     {{- $topicLogs := default $defaultLogs .Values.vector.kafkaTopic }}
     topic = "{{ $topicLogs }}"
     compression = "gzip"
-    # Use pod_uid as message key for even partition distribution and ordering
-    key_field = "pod_uid"
+    # Use client_id-prefixed message key for multi-tenant partitioning
+    key_field = "message_key"
 
     [sinks.kafka.encoding]
     codec = "json"
