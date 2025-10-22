@@ -28,14 +28,14 @@ data:
             - {{ .Values.client.kafka.brokers }}
           topic: {{ $topicEvents }}
           clientId: "event-exporter-{{ .Values.client.id }}"
-          key: "{{ "{{" }}- if .UID -{{ "}}" }}{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}::{{ "{{" }} .UID {{ "}}" }}{{ "{{" }}- else -{{ "}}" }}{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}::{{ "{{" }} .InvolvedObject.Namespace {{ "}}" }}/{{ "{{" }} .InvolvedObject.Name {{ "}}" }}/{{ "{{" }} .Reason {{ "}}" }}/{{ "{{" }} .EventTime {{ "}}" }}{{ "{{" }}- end -{{ "}}" }}"
+          key: "{{ "{{" }}- if .UID -{{ "}}" }}{{ .Values.client.id }}::{{ "{{" }} .UID {{ "}}" }}{{ "{{" }}- else -{{ "}}" }}{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.Namespace {{ "}}" }}/{{ "{{" }} .InvolvedObject.Name {{ "}}" }}/{{ "{{" }} .Reason {{ "}}" }}/{{ "{{" }} .EventTime {{ "}}" }}{{ "{{" }}- end -{{ "}}" }}"
           compression: gzip
           layout:
-            client_id: "{{ "{{" }} .Env.CLIENT_ID {{ "}}" }}"
-            metadata: "{{ "{{" }} .Metadata {{ "}}" }}"
+            client_id: "{{ .Values.client.id }}"
+            metadata: "{{ "{{" }} toJson .Metadata {{ "}}" }}"
             reason: "{{ "{{" }} .Reason {{ "}}" }}"
             message: "{{ "{{" }} .Message {{ "}}" }}"
-            source: "{{ "{{" }} .Source {{ "}}" }}"
+            source: "{{ "{{" }} toJson .Source {{ "}}" }}"
             firstTimestamp: "{{ "{{" }} .FirstTimestamp {{ "}}" }}"
             lastTimestamp: "{{ "{{" }} .LastTimestamp {{ "}}" }}"
             count: "{{ "{{" }} .Count {{ "}}" }}"
@@ -43,7 +43,7 @@ data:
             eventTime: "{{ "{{" }} .EventTime {{ "}}" }}"
             reportingComponent: "{{ "{{" }} .ReportingComponent {{ "}}" }}"
             reportingInstance: "{{ "{{" }} .ReportingInstance {{ "}}" }}"
-            involvedObject: "{{ "{{" }} .InvolvedObject {{ "}}" }}"
+            involvedObject: "{{ "{{" }} toJson .InvolvedObject {{ "}}" }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
