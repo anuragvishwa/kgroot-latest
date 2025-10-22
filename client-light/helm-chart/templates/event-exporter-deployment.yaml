@@ -28,18 +28,8 @@ data:
             - {{ .Values.client.kafka.brokers }}
           topic: {{ $topicEvents }}
           clientId: "event-exporter-{{ .Values.client.id }}"
-          key: "{{ "{{" }}- if .UID -{{ "}}" }}{{ .Values.client.id }}::{{ "{{" }} .UID {{ "}}" }}{{ "{{" }}- else -{{ "}}" }}{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.Namespace {{ "}}" }}/{{ "{{" }} .InvolvedObject.Name {{ "}}" }}/{{ "{{" }} .Reason {{ "}}" }}/{{ "{{" }} .EventTime {{ "}}" }}{{ "{{" }}- end -{{ "}}" }}"
+          key: "{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
           compression: gzip
-          layout:
-            client_id: "{{ .Values.client.id }}"
-            metadata: "{{ "{{" }} .Metadata {{ "}}" }}"
-            reason: "{{ "{{" }} .Reason {{ "}}" }}"
-            message: "{{ "{{" }} .Message {{ "}}" }}"
-            type: "{{ "{{" }} .Type {{ "}}" }}"
-            involvedObject_kind: "{{ "{{" }} .InvolvedObject.Kind {{ "}}" }}"
-            involvedObject_name: "{{ "{{" }} .InvolvedObject.Name {{ "}}" }}"
-            involvedObject_namespace: "{{ "{{" }} .InvolvedObject.Namespace {{ "}}" }}"
-            involvedObject_uid: "{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
