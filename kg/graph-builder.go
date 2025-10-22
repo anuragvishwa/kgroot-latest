@@ -1053,12 +1053,15 @@ func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
             } `json:"involvedObject"`
         }
         if err := json.Unmarshal(msg.Value, &raw); err == nil {
-            // Fill client_id from payload or Kafka key
+            // Fill client_id from payload or Kafka key or consumer default
             if ev.ClientID == "" {
                 ev.ClientID = raw.ClientID
             }
             if ev.ClientID == "" && tenantFromKey != "" {
                 ev.ClientID = tenantFromKey
+            }
+            if ev.ClientID == "" && h.clientID != "" {
+                ev.ClientID = h.clientID  // Use graph-builder's default CLIENT_ID
             }
 
             // Normalize event_time

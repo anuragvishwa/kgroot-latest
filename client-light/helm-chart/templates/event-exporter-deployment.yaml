@@ -30,10 +30,6 @@ data:
           topic: {{ $topicEvents }}
           clientId: "event-exporter-{{ .Values.client.id }}"
           compression: gzip
-          layout: |
-            {{ "{{" }} $event := . {{ "}}" }}
-            {{ "{{" }} $event.ClientID = "{{ .Values.client.id }}" {{ "}}" }}
-            {{ "{{" }} toJson $event {{ "}}" }}
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
