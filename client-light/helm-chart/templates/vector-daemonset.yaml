@@ -75,7 +75,7 @@ data:
     if is_null(client_id) || client_id == "" {
       .message_key = key
     } else {
-      .message_key = join!([client_id, string!(key)], "::")
+      .message_key = join!([client_id, key], "::")
     }
     '''
 
