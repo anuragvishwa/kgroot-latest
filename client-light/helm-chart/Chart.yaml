@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.41
+version: 1.0.42
 appVersion: "1.0.4"
 keywords:
   - knowledge-graph
@@ -39,9 +39,9 @@ annotations:
       url: https://lumniverse.com
   artifacthub.io/changes: |
     - kind: fixed
-      description: Fixed event-exporter layout to include both key AND message (v1.0.40 only sent key)
+      description: Fixed YAML syntax error in event-exporter layout - quote key and message template strings
     - kind: fixed
-      description: Event messages now include full event JSON with client_id-prefixed Kafka keys
+      description: Resolved CrashLoopBackOff caused by invalid map key in event-exporter config
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/signKey: |
     fingerprint: # Add GPG key fingerprint if signing releases

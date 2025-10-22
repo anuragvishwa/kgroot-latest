@@ -31,8 +31,8 @@ data:
           clientId: "event-exporter-{{ .Values.client.id }}"
           compression: gzip
           layout:
-            key: {{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}
-            message: {{ "{{" }} toJson . {{ "}}" }}
+            key: "{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
+            message: "{{ "{{" }} toJson . {{ "}}" }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
@@ -51,8 +51,8 @@ data:
           clientId: "event-exporter-raw-{{ .Values.client.id }}"
           compression: gzip
           layout:
-            key: {{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}
-            message: {{ "{{" }} toJson . {{ "}}" }}
+            key: "{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
+            message: "{{ "{{" }} toJson . {{ "}}" }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
