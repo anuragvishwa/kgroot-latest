@@ -32,10 +32,14 @@ data:
           compression: gzip
           layout:
             client_id: "{{ .Values.client.id }}"
+            metadata: "{{ "{{" }} .Metadata {{ "}}" }}"
             reason: "{{ "{{" }} .Reason {{ "}}" }}"
             message: "{{ "{{" }} .Message {{ "}}" }}"
             type: "{{ "{{" }} .Type {{ "}}" }}"
-            involvedObject: "{{ "{{" }} toJson .InvolvedObject {{ "}}" }}"
+            involvedObject_kind: "{{ "{{" }} .InvolvedObject.Kind {{ "}}" }}"
+            involvedObject_name: "{{ "{{" }} .InvolvedObject.Name {{ "}}" }}"
+            involvedObject_namespace: "{{ "{{" }} .InvolvedObject.Namespace {{ "}}" }}"
+            involvedObject_uid: "{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
