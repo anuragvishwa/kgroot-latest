@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.20
+version: 1.0.21
 appVersion: "1.0.4"
 keywords:
   - knowledge-graph

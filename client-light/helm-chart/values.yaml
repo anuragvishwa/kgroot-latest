@@ -15,7 +15,7 @@ client:
 
   # Kafka connection
   kafka:
-    brokers: "kafka.kg-rca.yourcompany.com:9092"
+    brokers: "98.90.147.12:9092"
     sasl:
       enabled: false # Set to true for SSL/SASL authentication
       mechanism: SCRAM-SHA-512
