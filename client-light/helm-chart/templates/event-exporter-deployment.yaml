@@ -29,8 +29,9 @@ data:
             - {{ .Values.client.kafka.brokers }}
           topic: {{ $topicEvents }}
           clientId: "event-exporter-{{ .Values.client.id }}"
-          key: "{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
           compression: gzip
+          layout:
+            key: "{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
@@ -47,8 +48,9 @@ data:
             - {{ .Values.client.kafka.brokers }}
           topic: {{ $topicRawEvents }}
           clientId: "event-exporter-raw-{{ .Values.client.id }}"
-          key: "{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
           compression: gzip
+          layout:
+            key: "{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
             enable: true
