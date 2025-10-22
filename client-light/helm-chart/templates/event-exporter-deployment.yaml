@@ -15,9 +15,10 @@ data:
     logFormat: json
     maxEventAgeSeconds: 300
     route:
-      receivers:
-        - kafka
-        - stdout
+      routes:
+        - match:
+            - receiver: "stdout"
+            - receiver: "kafka"
     receivers:
       - name: "stdout"
         stdout: {}
