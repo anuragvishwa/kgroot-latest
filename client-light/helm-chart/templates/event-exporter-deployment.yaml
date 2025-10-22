@@ -17,8 +17,12 @@ data:
     route:
       routes:
         - match: []
-          receiver: kafka
+          receivers:
+            - kafka
+            - stdout
     receivers:
+      - name: "stdout"
+        stdout: {}
       - name: "kafka"
         kafka:
           brokers:
