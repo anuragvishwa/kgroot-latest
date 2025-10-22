@@ -16,7 +16,7 @@ data:
     route:
       routes:
         - match:
-            - receiver: "kafka"
+          receiver: kafka
     receivers:
       - name: "kafka"
         kafka:
