@@ -15,7 +15,7 @@ data:
     logFormat: json
     route:
       routes:
-        - match:
+        - match: []
           receiver: kafka
     receivers:
       - name: "kafka"
