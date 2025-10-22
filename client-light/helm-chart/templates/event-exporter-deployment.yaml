@@ -28,7 +28,7 @@ data:
             - {{ .Values.client.kafka.brokers }}
           topic: {{ $topicEvents }}
           clientId: "event-exporter-{{ .Values.client.id }}"
-          key: "{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
+          key: "{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
           compression: gzip
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
