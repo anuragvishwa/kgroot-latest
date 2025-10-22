@@ -11,7 +11,7 @@ metadata:
     component: event-exporter
 data:
   config.yaml: |
-    logLevel: info
+    logLevel: debug
     logFormat: json
     maxEventAgeSeconds: 300
     route:

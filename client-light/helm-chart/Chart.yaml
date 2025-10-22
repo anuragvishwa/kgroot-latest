@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.28
+version: 1.0.29
 appVersion: "1.0.4"
 keywords:
   - knowledge-graph
@@ -38,6 +38,8 @@ annotations:
     - name: Website
       url: https://lumniverse.com
   artifacthub.io/changes: |
+    - kind: changed
+      description: Enable debug logging on event-exporter to diagnose Kafka publishing issues
     - kind: fixed
       description: Removed duplicate alert-webhook service (vector service already handles webhooks)
     - kind: added
