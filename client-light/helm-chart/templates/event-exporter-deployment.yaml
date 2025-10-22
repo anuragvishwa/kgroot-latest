@@ -32,17 +32,9 @@ data:
           compression: gzip
           layout:
             client_id: "{{ .Values.client.id }}"
-            metadata: "{{ "{{" }} toJson .Metadata {{ "}}" }}"
             reason: "{{ "{{" }} .Reason {{ "}}" }}"
             message: "{{ "{{" }} .Message {{ "}}" }}"
-            source: "{{ "{{" }} toJson .Source {{ "}}" }}"
-            firstTimestamp: "{{ "{{" }} .FirstTimestamp {{ "}}" }}"
-            lastTimestamp: "{{ "{{" }} .LastTimestamp {{ "}}" }}"
-            count: "{{ "{{" }} .Count {{ "}}" }}"
             type: "{{ "{{" }} .Type {{ "}}" }}"
-            eventTime: "{{ "{{" }} .EventTime {{ "}}" }}"
-            reportingComponent: "{{ "{{" }} .ReportingComponent {{ "}}" }}"
-            reportingInstance: "{{ "{{" }} .ReportingInstance {{ "}}" }}"
             involvedObject: "{{ "{{" }} toJson .InvolvedObject {{ "}}" }}"
           {{- if .Values.client.kafka.sasl.enabled }}
           tls:
