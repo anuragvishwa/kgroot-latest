@@ -13,6 +13,7 @@ data:
   config.yaml: |
     logLevel: info
     logFormat: json
+    maxEventAgeSeconds: 60
     route:
       routes:
         - match: []
