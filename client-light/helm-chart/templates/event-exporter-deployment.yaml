@@ -1,5 +1,6 @@
 {{- if .Values.eventExporter.enabled -}}
 {{- $topicEvents := default "events.normalized" .Values.eventExporter.kafkaTopic -}}
+{{- $topicRawEvents := .Values.eventExporter.rawTopic -}}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -18,6 +19,9 @@ data:
       routes:
         - match:
             - receiver: "kafka"
+            {{- if $topicRawEvents }}
+            - receiver: "kafka-raw"
+            {{- end }}
     receivers:
       - name: "kafka"
         kafka:
@@ -36,6 +40,25 @@ data:
             password: "{{ "{{" }} .Env.KAFKA_SASL_PASSWORD {{ "}}" }}"
             mechanism: {{ .Values.client.kafka.sasl.mechanism }}
           {{- end }}
+      {{- if $topicRawEvents }}
+      - name: "kafka-raw"
+        kafka:
+          brokers:
+            - {{ .Values.client.kafka.brokers }}
+          topic: {{ $topicRawEvents }}
+          clientId: "event-exporter-raw-{{ .Values.client.id }}"
+          key: "{{ .Values.client.id }}::{{ "{{" }} .InvolvedObject.UID {{ "}}" }}"
+          compression: gzip
+          {{- if .Values.client.kafka.sasl.enabled }}
+          tls:
+            enable: true
+          sasl:
+            enabled: true
+            username: "{{ "{{" }} .Env.KAFKA_SASL_USERNAME {{ "}}" }}"
+            password: "{{ "{{" }} .Env.KAFKA_SASL_PASSWORD {{ "}}" }}"
+            mechanism: {{ .Values.client.kafka.sasl.mechanism }}
+          {{- end }}
+      {{- end }}
 
 ---
 apiVersion: apps/v1
