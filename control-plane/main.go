@@ -455,17 +455,30 @@ func (cp *ControlPlane) cleanupCluster(ctx context.Context, clientID string) {
 		}
 	}
 
-	// Delete consumer group
+	// Delete consumer group using a separate Kafka connection
 	groupName := fmt.Sprintf("kg-builder-%s", clientID)
 	log.Printf("🗑️  Deleting consumer group: %s", groupName)
-	admin, err := sarama.NewClusterAdminFromClient(cp.kafka)
+
+	// Create a separate Kafka config and client for admin operations
+	// This prevents closing the shared client used by consumers
+	adminConfig := sarama.NewConfig()
+	adminConfig.Version = sarama.V3_6_0_0
+	adminClient, err := sarama.NewClient(cp.config.KafkaBrokers, adminConfig)
 	if err != nil {
-		log.Printf("⚠️  Failed to create admin client: %v", err)
+		log.Printf("⚠️  Failed to create admin Kafka client: %v", err)
 	} else {
-		if err := admin.DeleteConsumerGroup(groupName); err != nil {
-			log.Printf("⚠️  Failed to delete consumer group: %v", err)
+		defer adminClient.Close() // Safe to close this one, it's separate
+
+		admin, err := sarama.NewClusterAdminFromClient(adminClient)
+		if err != nil {
+			log.Printf("⚠️  Failed to create admin: %v", err)
+		} else {
+			defer admin.Close() // Safe to close since we're closing the client too
+
+			if err := admin.DeleteConsumerGroup(groupName); err != nil {
+				log.Printf("⚠️  Failed to delete consumer group: %v", err)
+			}
 		}
-		admin.Close()
 	}
 
 	cp.cleanupOpsTotal.Inc()

@@ -62,7 +62,7 @@ services:
       - kg-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:29092"]
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kg-kafka:29092"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -101,7 +101,7 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   kg-control-plane:
     build: ../control-plane
-    image: anuragvishwa/kg-control-plane:1.0.0
+    image: anuragvishwa/kg-control-plane:1.0.1
     container_name: kg-control-plane
     hostname: kg-control-plane
     ports:
