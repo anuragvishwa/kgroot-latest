@@ -37,7 +37,7 @@ stateWatcher:
   enabled: true
   image:
     repository: anuragvishwa/kg-state-watcher
-    tag: "1.0.2"
+    tag: "1.0.3"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
