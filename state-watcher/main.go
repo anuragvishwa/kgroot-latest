@@ -180,6 +180,37 @@ func runPromTargetSync(ctx context.Context, cluster, clientID, promURL string, p
 	}
 }
 
+// runHeartbeat sends periodic heartbeats to cluster.heartbeat topic
+func runHeartbeat(ctx context.Context, clientID string, p sarama.AsyncProducer, interval time.Duration, startTime time.Time, messageCounter *int64) {
+	if clientID == "" {
+		log.Println("heartbeat: skipped (no CLIENT_ID set)")
+		return
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	log.Printf("heartbeat: sending every %v to cluster.heartbeat", interval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			hb := map[string]interface{}{
+				"client_id": clientID,
+				"timestamp": time.Now().UTC().Format(time.RFC3339),
+				"status":    "healthy",
+				"metrics": map[string]interface{}{
+					"resources_sent":  *messageCounter,
+					"uptime_seconds":  int(time.Since(startTime).Seconds()),
+				},
+			}
+			sendJSON(p, clientID, "cluster.heartbeat", clientID, hb)
+		}
+	}
+}
+
 type edgeIndex struct {
 	mu   sync.Mutex
 	data map[string]map[string]struct{} // serviceID -> set(podID)
@@ -1065,6 +1096,10 @@ func main() {
 		cancel()
 	}()
 
+	// Message counter for heartbeat metrics
+	var messageCounter int64
+	startTime := time.Now()
+
 	lec := leaderelection.LeaderElectionConfig{
 		Lock:          lock,
 		LeaseDuration: 15 * time.Second,
@@ -1073,6 +1108,7 @@ func main() {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				go runPromTargetSync(ctx, cluster, tenantClientID, promURL, producer, topicProm, promTick)
+				go runHeartbeat(ctx, tenantClientID, producer, 30*time.Second, startTime, &messageCounter)
 				runWatchers(ctx, cluster, tenantClientID, client, producer, topicRes, topicTopo)
 			},
 			OnStoppedLeading: func() {

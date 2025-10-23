@@ -2,8 +2,8 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.47
-appVersion: "1.0.4"
+version: 2.0.0
+appVersion: "2.0.0"
 keywords:
   - knowledge-graph
   - rca
@@ -38,10 +38,16 @@ annotations:
     - name: Website
       url: https://lumniverse.com
   artifacthub.io/changes: |
+    - kind: added
+      description: Control plane architecture with dynamic consumer spawning
+    - kind: added
+      description: Cluster registration via cluster.registry Kafka topic
+    - kind: added
+      description: Heartbeat monitoring via cluster.heartbeat Kafka topic
+    - kind: added
+      description: Auto-cleanup of dead clusters after 5 minutes no heartbeat
     - kind: changed
-      description: Events sent without client_id in body - graph-builder uses its CLIENT_ID env var as fallback
-    - kind: fixed
-      description: Multi-tenant support via graph-builder client_id fallback instead of event-exporter layout modifications
+      description: Zero-touch operations - helm install auto-spawns graph-builder, helm delete auto-cleans up
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/signKey: |
     fingerprint: # Add GPG key fingerprint if signing releases

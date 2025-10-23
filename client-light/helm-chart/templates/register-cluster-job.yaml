@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-register-cluster
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: register
+        image: confluentinc/cp-kafka:7.5.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "📝 Registering cluster {{ .Values.client.id }}..."
+
+          # Create registration message
+          REGISTRATION=$(cat <<EOF
+          {
+            "client_id": "{{ .Values.client.id }}",
+            "cluster_name": "{{ .Values.cluster.name | default .Values.client.id }}",
+            "version": "{{ .Chart.Version }}",
+            "registered_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "metadata": {
+              "namespace": "{{ .Release.Namespace }}",
+              "release_name": "{{ .Release.Name }}",
+              "chart_version": "{{ .Chart.Version }}"
+            }
+          }
+          EOF
+          )
+
+          # Send to Kafka
+          echo "{{ .Values.client.id }}:$REGISTRATION" | kafka-console-producer \
+            --bootstrap-server {{ .Values.client.kafka.brokers }} \
+            --topic cluster.registry \
+            --property "parse.key=true" \
+            --property "key.separator=:" \
+            {{- if .Values.client.kafka.sasl.enabled }}
+            --producer-property "security.protocol={{ .Values.client.kafka.sasl.mechanism }}" \
+            --producer-property "sasl.mechanism={{ .Values.client.kafka.sasl.mechanism }}" \
+            --producer-property "sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"{{ .Values.client.kafka.sasl.username }}\" password=\"{{ .Values.client.kafka.sasl.password }}\";" \
+            {{- end }}
+            2>&1
+
+          if [ $? -eq 0 ]; then
+            echo "✅ Cluster {{ .Values.client.id }} registered successfully!"
+          else
+            echo "❌ Failed to register cluster {{ .Values.client.id }}"
+            exit 1
+          fi
