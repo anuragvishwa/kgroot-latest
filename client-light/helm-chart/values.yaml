@@ -13,11 +13,6 @@ client:
   # Server connection details
   serverUrl: "https://api.kg-rca.yourcompany.com"
 
-# Cluster metadata
-cluster:
-  # Human-readable cluster name (defaults to client.id if not set)
-  name: ""
-
   # Kafka connection
   kafka:
     brokers: "98.90.147.12:9092"
@@ -29,6 +24,11 @@ cluster:
 
   # Namespace to monitor (default: all accessible namespaces)
   monitoredNamespaces: [] # Empty means all accessible
+
+# Cluster metadata
+cluster:
+  # Human-readable cluster name (defaults to client.id if not set)
+  name: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # State Watcher - Kubernetes Resource Monitoring

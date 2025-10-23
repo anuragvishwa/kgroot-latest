@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 2.0.0
+version: 2.0.1
 appVersion: "2.0.0"
 keywords:
   - knowledge-graph
@@ -38,6 +38,8 @@ annotations:
     - name: Website
       url: https://lumniverse.com
   artifacthub.io/changes: |
+    - kind: fixed
+      description: Fixed values.yaml structure - moved kafka config back under client
     - kind: added
       description: Control plane architecture with dynamic consumer spawning
     - kind: added
