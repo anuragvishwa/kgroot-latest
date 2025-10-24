@@ -176,6 +176,61 @@ services:
     depends_on:
       - kg-kafka
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # KGroot RCA - Webhook Receiver & Event Collector
+  # ───────────────────────────────────────────────────────────────────────────
+  kg-rca-webhook:
+    build: ./kgroot-services
+    image: anuragvishwa/kg-rca-webhook:1.0.0
+    container_name: kg-rca-webhook
+    hostname: kg-rca-webhook
+    ports:
+      - "8081:8081"  # Alertmanager webhook
+    environment:
+      # RCA settings
+      ENABLE_RCA: "true"
+      KGROOT_CONFIG: "/app/config.yaml"
+      PORT: "8081"
+      HOST: "0.0.0.0"
+
+      # Neo4j connection (optional, for pattern storage)
+      NEO4J_URI: "neo4j://kg-neo4j:7687"
+      NEO4J_USER: "neo4j"
+      NEO4J_PASS: "Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA"
+    volumes:
+      - ./kgroot-services/config.yaml:/app/config.yaml:ro
+    networks:
+      - kg-network
+    restart: unless-stopped
+    depends_on:
+      - kg-neo4j
+    command: ["python", "alertmanager_webhook.py"]
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # KGroot RCA - K8s Event Collector (optional, requires kubeconfig)
+  # ───────────────────────────────────────────────────────────────────────────
+  # Uncomment this service when you have a client kubeconfig file
+  #
+  # kg-rca-k8s-collector:
+  #   build: ./kgroot-services
+  #   image: anuragvishwa/kg-rca-k8s-collector:1.0.0
+  #   container_name: kg-rca-k8s-collector
+  #   hostname: kg-rca-k8s-collector
+  #   environment:
+  #     KUBECONFIG_PATH: "/config/kubeconfig.yaml"
+  #     KGROOT_CONFIG: "/app/config.yaml"
+  #     ENABLE_RCA: "true"
+  #     WATCH_NAMESPACES: ""  # Empty = all namespaces, or "namespace1,namespace2"
+  #   volumes:
+  #     - ./kgroot-services/config.yaml:/app/config.yaml:ro
+  #     - ./kubeconfig.yaml:/config/kubeconfig.yaml:ro  # Mount client's kubeconfig
+  #   networks:
+  #     - kg-network
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - kg-neo4j
+  #   command: ["python", "k8s_event_collector.py"]
+
 volumes:
   kafka-data:
     driver: local
