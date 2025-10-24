@@ -20,7 +20,7 @@ class LLMAnalyzer:
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-4-turbo-preview",
+        model: str = "gpt-4o",  # Latest GPT-4o model (most powerful)
         temperature: float = 0.1  # Low temperature for consistent results
     ):
         self.client = openai.OpenAI(api_key=api_key)

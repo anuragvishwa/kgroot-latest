@@ -148,11 +148,13 @@ ranked = ranker.rank_root_causes(
 LLM-enhanced analysis using OpenAI embeddings and GPT-4.
 
 **Features**:
-- Event and pattern embeddings
+- Event and pattern embeddings (text-embedding-3-small)
 - Semantic similarity search
-- Natural language explanations
+- Natural language explanations (GPT-4o)
 - Contextual recommendations
 - Runbook generation
+
+**Note**: Uses GPT-4o (OpenAI's latest and most powerful model)
 
 **Usage**:
 ```python
@@ -161,7 +163,7 @@ from graphrag.llm_analyzer import LLMAnalyzer
 
 # Initialize services
 embedding_service = EmbeddingService(api_key=OPENAI_API_KEY)
-llm_analyzer = LLMAnalyzer(api_key=OPENAI_API_KEY)
+llm_analyzer = LLMAnalyzer(api_key=OPENAI_API_KEY, model="gpt-4o")
 
 # Analyze with LLM
 analysis = await llm_analyzer.analyze_failure(
