@@ -7,7 +7,7 @@ numpy==1.26.2
 pandas==2.1.4
 
 # GraphRAG and AI
-openai==1.6.1
+openai>=1.60.0  # GPT-5 support requires latest version
 tiktoken==0.5.2
 langchain==0.1.0
 langchain-openai==0.0.2

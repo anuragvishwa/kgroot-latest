@@ -1,6 +1,6 @@
 """
 LLM Analyzer for GraphRAG-enhanced RCA
-Uses GPT-4 to provide contextual analysis and recommendations
+Uses GPT-5 (or GPT-4o fallback) to provide contextual analysis and recommendations
 """
 
 import openai
@@ -15,17 +15,28 @@ class LLMAnalyzer:
     """
     LLM-based analyzer for root cause analysis
     Provides natural language explanations and recommendations
+    Supports both GPT-5 (Responses API) and GPT-4o (Chat Completions API)
     """
 
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-4o",  # Latest GPT-4o model (most powerful)
-        temperature: float = 0.1  # Low temperature for consistent results
+        model: str = "gpt-5",  # GPT-5 (or "gpt-4o" for fallback)
+        reasoning_effort: str = "medium",  # For GPT-5: minimal, low, medium, high
+        verbosity: str = "medium"  # For GPT-5: low, medium, high
     ):
         self.client = openai.OpenAI(api_key=api_key)
         self.model = model
-        self.temperature = temperature
+        self.reasoning_effort = reasoning_effort
+        self.verbosity = verbosity
+
+        # Check if using GPT-5 or fallback
+        self.is_gpt5 = model.startswith("gpt-5")
+
+        if self.is_gpt5:
+            logger.info(f"Using GPT-5 with reasoning effort: {reasoning_effort}, verbosity: {verbosity}")
+        else:
+            logger.info(f"Using {model} (Chat Completions API)")
 
     async def analyze_failure(
         self,
@@ -54,23 +65,56 @@ class LLMAnalyzer:
         )
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert SRE analyzing Kubernetes failures. Provide clear, actionable insights."
+            if self.is_gpt5:
+                # Use GPT-5 Responses API
+                response = self.client.responses.create(
+                    model=self.model,
+                    input=prompt,
+                    reasoning={
+                        "effort": self.reasoning_effort
                     },
-                    {
-                        "role": "user",
-                        "content": prompt
+                    text={
+                        "verbosity": self.verbosity
+                    },
+                    developer_message={
+                        "role": "developer",
+                        "content": "You are an expert SRE analyzing Kubernetes failures. Provide clear, actionable insights in JSON format."
                     }
-                ],
-                temperature=self.temperature,
-                response_format={"type": "json_object"}
-            )
+                )
 
-            analysis = json.loads(response.choices[0].message.content)
+                # Parse output from GPT-5
+                analysis_text = response.output_text
+                # Try to parse as JSON
+                try:
+                    analysis = json.loads(analysis_text)
+                except json.JSONDecodeError:
+                    # If not JSON, wrap it
+                    analysis = {
+                        "root_cause_diagnosis": analysis_text,
+                        "confidence_level": "medium",
+                        "raw_output": True
+                    }
+
+            else:
+                # Use GPT-4o Chat Completions API (fallback)
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert SRE analyzing Kubernetes failures. Provide clear, actionable insights."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.1,
+                    response_format={"type": "json_object"}
+                )
+
+                analysis = json.loads(response.choices[0].message.content)
+
             return analysis
 
         except Exception as e:
@@ -187,16 +231,31 @@ Create a comprehensive runbook in Markdown format with:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are an expert SRE creating operational runbooks."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2
-            )
+            if self.is_gpt5:
+                # Use GPT-5 for runbook generation
+                response = self.client.responses.create(
+                    model=self.model,
+                    input=prompt,
+                    reasoning={"effort": "low"},  # Don't need deep reasoning for runbooks
+                    text={"verbosity": "high"},  # Want detailed output
+                    developer_message={
+                        "role": "developer",
+                        "content": "You are an expert SRE creating operational runbooks. Be detailed and practical."
+                    }
+                )
+                return response.output_text
 
-            return response.choices[0].message.content
+            else:
+                # GPT-4o fallback
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": "You are an expert SRE creating operational runbooks."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2
+                )
+                return response.choices[0].message.content
 
         except Exception as e:
             logger.error(f"Runbook generation failed: {e}")

@@ -66,7 +66,10 @@ class RCAOrchestrator:
     def __init__(
         self,
         openai_api_key: Optional[str] = None,
-        enable_llm: bool = False
+        enable_llm: bool = False,
+        llm_model: str = "gpt-5",
+        reasoning_effort: str = "medium",
+        verbosity: str = "medium"
     ):
         """
         Initialize RCA orchestrator
@@ -74,6 +77,9 @@ class RCAOrchestrator:
         Args:
             openai_api_key: OpenAI API key for GraphRAG
             enable_llm: Enable LLM-enhanced analysis
+            llm_model: Model to use (gpt-5, gpt-5-mini, gpt-5-nano, or gpt-4o)
+            reasoning_effort: GPT-5 reasoning effort (minimal, low, medium, high)
+            verbosity: GPT-5 output verbosity (low, medium, high)
         """
         # Core components
         self.graph_builder = EventGraphBuilder(
@@ -98,8 +104,13 @@ class RCAOrchestrator:
         self.enable_llm = enable_llm and openai_api_key
         if self.enable_llm:
             self.embedding_service = EmbeddingService(openai_api_key)
-            self.llm_analyzer = LLMAnalyzer(openai_api_key)
-            logger.info("LLM-enhanced analysis enabled")
+            self.llm_analyzer = LLMAnalyzer(
+                api_key=openai_api_key,
+                model=llm_model,
+                reasoning_effort=reasoning_effort,
+                verbosity=verbosity
+            )
+            logger.info(f"LLM-enhanced analysis enabled with {llm_model}")
         else:
             self.embedding_service = None
             self.llm_analyzer = None

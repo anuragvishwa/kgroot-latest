@@ -10,7 +10,14 @@ neo4j:
 openai:
   api_key: "sk-your-api-key-here"
   embedding_model: "text-embedding-3-small"
-  chat_model: "gpt-4o"  # Latest GPT-4o model
+
+  # Model Selection: gpt-5, gpt-5-mini, gpt-5-nano, or gpt-4o (fallback)
+  chat_model: "gpt-5"
+
+  # GPT-5 specific settings (ignored if using gpt-4o)
+  reasoning_effort: "medium"  # minimal, low, medium, high
+  verbosity: "medium"  # low, medium, high
+
   enable_llm_analysis: true
 
 # Graph Builder Configuration
