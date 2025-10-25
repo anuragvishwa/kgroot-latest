@@ -173,7 +173,7 @@ class ControlPlaneManagerV2:
                     "CLIENT_ID": client_id,
                     "NEO4J_URI": self.neo4j_uri,
                     "NEO4J_USER": self.neo4j_user,
-                    "NEO4J_PASSWORD": self.neo4j_password,
+                    "NEO4J_PASS": self.neo4j_password,  # ← Go binary uses NEO4J_PASS not NEO4J_PASSWORD
                     "NEO4J_DATABASE": client_id,  # ← Separate database per client
                 },
                 network=self.docker_network,
