@@ -192,21 +192,27 @@ async def trigger_rca(events: List[Event]):
 
         # Run RCA
         result = await rca_orchestrator.analyze_failure(
-            events=events,
             fault_id=fault_id,
-            time_window_seconds=RCA_TIME_WINDOW
+            events=events,
+            context={"time_window_seconds": RCA_TIME_WINDOW}
         )
 
         # Log results
-        if result and result.get("ranked_root_causes"):
-            top_causes = result["ranked_root_causes"][:3]
+        if result and result.top_root_causes:
+            top_causes = result.top_root_causes[:3]
             logger.info("🎯 Top Root Causes:")
             for i, cause in enumerate(top_causes, 1):
-                logger.info(f"  {i}. {cause['event_type']} in {cause['service']} (confidence: {cause['rank_score']:.2f})")
+                logger.info(f"  {i}. {cause['event_type']} in {cause['service']} (confidence: {cause['confidence']})")
                 logger.info(f"     Explanation: {cause['explanation'][:100]}...")
 
-            if result.get("llm_analysis"):
-                logger.info(f"💡 LLM Insight: {result['llm_analysis'].get('summary', 'N/A')}")
+            if result.llm_analysis:
+                summary = result.llm_analysis.get('summary', 'N/A')
+                logger.info(f"💡 LLM Insight: {summary}")
+
+                if result.llm_analysis.get('immediate_actions'):
+                    logger.info("📋 Recommended Actions:")
+                    for action in result.llm_analysis['immediate_actions'][:3]:
+                        logger.info(f"  - {action}")
 
         return result
 
