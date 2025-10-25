@@ -121,9 +121,9 @@ services:
       HEARTBEAT_CHECK_INTERVAL_SECONDS: "30"
 
       # Container images to spawn
-      EVENT_NORMALIZER_IMAGE: "anuragvishwa/kg-event-normalizer:2.0.0"
-      LOG_NORMALIZER_IMAGE: "anuragvishwa/kg-log-normalizer:2.0.0"
-      GRAPH_BUILDER_IMAGE: "anuragvishwa/kg-graph-builder:2.0.0"
+      EVENT_NORMALIZER_IMAGE: "anuragvishwa/kg-event-normalizer:1.0.0"
+      LOG_NORMALIZER_IMAGE: "anuragvishwa/kg-log-normalizer:1.0.0"
+      GRAPH_BUILDER_IMAGE: "anuragvishwa/kg-graph-builder:1.0.20"
 
       # Neo4j connection (for graph builders)
       NEO4J_URI: "bolt://kg-neo4j:7687"
