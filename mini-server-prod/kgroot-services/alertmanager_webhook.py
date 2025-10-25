@@ -206,12 +206,43 @@ async def trigger_rca(events: List[Event]):
                 logger.info(f"     Explanation: {cause['explanation'][:100]}...")
 
             if result.llm_analysis:
-                summary = result.llm_analysis.get('summary', 'N/A')
-                logger.info(f"💡 LLM Insight: {summary}")
+                llm = result.llm_analysis
+                summary = llm.get('summary', 'N/A')
+                logger.info(f"\n💡 LLM Analysis Summary: {summary}")
+                logger.info(f"   Confidence: {llm.get('confidence_level', 'N/A')}")
 
-                if result.llm_analysis.get('immediate_actions'):
-                    logger.info("📋 Recommended Actions:")
-                    for action in result.llm_analysis['immediate_actions'][:3]:
+                # Blast Radius Analysis
+                if llm.get('blast_radius_analysis'):
+                    br = llm['blast_radius_analysis']
+                    logger.info(f"\n💥 Blast Radius:")
+                    logger.info(f"   Impact: {br.get('immediate_impact', 'Unknown')}")
+                    logger.info(f"   User Impact: {br.get('user_impact_percentage', 'Unknown')}")
+                    logger.info(f"   Downstream: {', '.join(br.get('downstream_services', []))}")
+
+                # Recommended Action Priority
+                if llm.get('recommended_action'):
+                    ra = llm['recommended_action']
+                    logger.info(f"\n🚨 Recommended Action:")
+                    logger.info(f"   Priority: {ra.get('priority', 'Unknown')}")
+                    logger.info(f"   Time to Action: {ra.get('time_to_action', 'Unknown')}")
+                    logger.info(f"   Team: {ra.get('on_call_team', 'Unknown')}")
+
+                # Top 3 Solutions
+                if llm.get('top_3_solutions'):
+                    logger.info(f"\n📋 Top 3 Solutions:")
+                    for i, sol in enumerate(llm['top_3_solutions'], 1):
+                        logger.info(f"\n   Solution {i}: {sol.get('solution', 'Unknown')}")
+                        logger.info(f"   ├─ Success Rate: {sol.get('probability_of_success', 'N/A')}")
+                        logger.info(f"   ├─ Blast Radius: {sol.get('blast_radius', 'N/A')}")
+                        logger.info(f"   ├─ Risk Level: {sol.get('risk_level', 'N/A')}")
+                        logger.info(f"   ├─ Downtime: {sol.get('estimated_downtime', 'N/A')}")
+                        if sol.get('action_steps'):
+                            logger.info(f"   └─ Steps: {', '.join(sol['action_steps'][:2])}...")
+
+                # Immediate Actions (fallback)
+                elif llm.get('immediate_actions'):
+                    logger.info("\n📋 Immediate Actions:")
+                    for action in llm['immediate_actions'][:3]:
                         logger.info(f"  - {action}")
 
         return result
