@@ -67,18 +67,17 @@ class LLMAnalyzer:
         try:
             if self.is_gpt5:
                 # Use GPT-5 Responses API
+                # Add system instructions to the prompt itself
+                full_prompt = "You are an expert SRE analyzing Kubernetes failures. Provide clear, actionable insights in JSON format.\n\n" + prompt
+
                 response = self.client.responses.create(
                     model=self.model,
-                    input=prompt,
+                    input=full_prompt,
                     reasoning={
                         "effort": self.reasoning_effort
                     },
                     text={
                         "verbosity": self.verbosity
-                    },
-                    developer_message={
-                        "role": "developer",
-                        "content": "You are an expert SRE analyzing Kubernetes failures. Provide clear, actionable insights in JSON format."
                     }
                 )
 
