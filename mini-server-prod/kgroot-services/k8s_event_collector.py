@@ -296,16 +296,24 @@ class K8sEventCollector:
 
             # Enrich with context
             labels = {}
-            annotations = {}
-            metrics = {}
+            pod_name = None
+            node_name = None
 
             if involved_obj and involved_obj.kind == "Pod":
                 pod_key = f"{namespace}/{involved_obj.name}"
+                pod_name = involved_obj.name
                 if pod_key in self.pod_cache:
                     pod_info = self.pod_cache[pod_key]
                     labels = pod_info.get("labels", {})
-                    metrics["node"] = pod_info.get("node")
-                    metrics["phase"] = pod_info.get("phase")
+                    node_name = pod_info.get("node")
+
+            # Store K8s-specific data in details
+            event_details = {
+                'k8s_source': 'kubernetes_events',
+                'reason': reason,
+                'kind': involved_obj.kind if involved_obj else None,
+                'count': k8s_event.count,
+            }
 
             # Create KGroot Event
             return Event(
@@ -316,15 +324,10 @@ class K8sEventCollector:
                 namespace=namespace,
                 severity=kg_severity,
                 message=message,
-                source="kubernetes",
+                pod_name=pod_name,
+                node=node_name,
                 labels=labels,
-                annotations=annotations,
-                metrics=metrics,
-                raw_data={
-                    "reason": reason,
-                    "kind": involved_obj.kind if involved_obj else None,
-                    "count": k8s_event.count,
-                }
+                details=event_details
             )
 
         except Exception as e:

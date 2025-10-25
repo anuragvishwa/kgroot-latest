@@ -146,14 +146,21 @@ def convert_alert_to_event(alert: Dict) -> Event:
     description = annotations.get('description', '')
     message = f"{summary}\n{description}".strip()
 
-    # Extract metrics
-    metrics = {}
-    for key, value in labels.items():
-        if key in ['pod', 'node', 'container', 'instance']:
-            metrics[key] = value
+    # Extract pod/node/container from labels
+    pod_name = labels.get('pod')
+    node_name = labels.get('node')
+    container_name = labels.get('container')
 
     # Create event
     event_id = f"alert-{alert.get('fingerprint', hash(json.dumps(alert)))}"
+
+    # Store full alert data in details field
+    event_details = {
+        'alert_source': 'alertmanager',
+        'alert_fingerprint': alert.get('fingerprint'),
+        'instance': labels.get('instance'),
+        'raw_alert': alert
+    }
 
     return Event(
         event_id=event_id,
@@ -163,11 +170,12 @@ def convert_alert_to_event(alert: Dict) -> Event:
         namespace=namespace,
         severity=event_severity,
         message=message,
-        source="alertmanager",
+        pod_name=pod_name,
+        node=node_name,
+        container=container_name,
         labels=labels,
         annotations=annotations,
-        metrics=metrics,
-        raw_data=alert
+        details=event_details
     )
 
 
