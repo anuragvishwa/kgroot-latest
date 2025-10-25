@@ -359,3 +359,10 @@ networkPolicy:
       ports:
         - protocol: UDP
           port: 53
+
+# ==============================================================================
+# Heartbeat Configuration (V2 Control Plane)
+# ==============================================================================
+heartbeat:
+  enabled: true
+  interval: "30s"  # Sends heartbeat every minute via CronJob
