@@ -34,6 +34,7 @@ kafka-python==2.0.2
 
 # Docker SDK (for control plane)
 docker==7.0.0
+requests==2.31.0
 
 # FastAPI (for webhook)
 fastapi==0.109.0
