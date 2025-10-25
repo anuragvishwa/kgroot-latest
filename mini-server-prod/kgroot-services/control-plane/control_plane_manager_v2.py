@@ -94,7 +94,7 @@ class ControlPlaneManagerV2:
 
             # Spawn new container
             container = self.docker_client.containers.run(
-                image="anuragvishwa/kg-event-normalizer:1.0.0",
+                image=self.event_normalizer_image,
                 name=container_name,
                 environment={
                     "KAFKA_BROKERS": self.kafka_brokers,
@@ -124,7 +124,7 @@ class ControlPlaneManagerV2:
                 return existing[0].id
 
             container = self.docker_client.containers.run(
-                image="anuragvishwa/kg-log-normalizer:1.0.0",
+                image=self.log_normalizer_image,
                 name=container_name,
                 environment={
                     "KAFKA_BROKERS": self.kafka_brokers,
@@ -133,7 +133,7 @@ class ControlPlaneManagerV2:
                 network=self.docker_network,
                 detach=True,
                 restart_policy={"Name": "unless-stopped"},
-                command=["python", "normalizers/log_normalizer_v2.py"]
+                command=["python", "normalizers/log_normalizer.py"]
             )
 
             logger.info(f"   ✅ Spawned log normalizer: {container_name} (ID: {container.short_id})")
@@ -154,20 +154,20 @@ class ControlPlaneManagerV2:
                 return existing[0].id
 
             container = self.docker_client.containers.run(
-                image="anuragvishwa/kg-graph-builder:1.0.0",
+                image=self.graph_builder_image,
                 name=container_name,
                 environment={
                     "KAFKA_BROKERS": self.kafka_brokers,
                     "CLIENT_ID": client_id,
-                    "NEO4J_URI": "bolt://kg-neo4j:7687",
-                    "NEO4J_USER": "neo4j",
-                    "NEO4J_PASSWORD": "Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA",
+                    "NEO4J_URI": self.neo4j_uri,
+                    "NEO4J_USER": self.neo4j_user,
+                    "NEO4J_PASSWORD": self.neo4j_password,
                     "NEO4J_DATABASE": client_id,  # ← Separate database per client
                 },
                 network=self.docker_network,
                 detach=True,
                 restart_policy={"Name": "unless-stopped"},
-                command=["python", "graph/graph_builder_v2.py"]
+                command=["./graph-builder"]
             )
 
             logger.info(f"   ✅ Spawned graph builder: {container_name} (ID: {container.short_id})")
