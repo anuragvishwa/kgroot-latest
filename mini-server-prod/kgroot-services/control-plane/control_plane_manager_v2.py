@@ -47,9 +47,21 @@ class ControlPlaneManagerV2:
     """
 
     def __init__(self, kafka_brokers: str, docker_network: str = "mini-server-prod_kg-network"):
+        import os
+
         self.kafka_brokers = kafka_brokers
         self.docker_network = docker_network
         self.docker_client = docker.from_env()
+
+        # Container images (from environment variables)
+        self.event_normalizer_image = os.getenv("EVENT_NORMALIZER_IMAGE", "anuragvishwa/kg-event-normalizer:1.0.0")
+        self.log_normalizer_image = os.getenv("LOG_NORMALIZER_IMAGE", "anuragvishwa/kg-log-normalizer:1.0.0")
+        self.graph_builder_image = os.getenv("GRAPH_BUILDER_IMAGE", "anuragvishwa/kg-graph-builder:1.0.20")
+
+        # Neo4j connection (from environment variables)
+        self.neo4j_uri = os.getenv("NEO4J_URI", "bolt://kg-neo4j:7687")
+        self.neo4j_user = os.getenv("NEO4J_USER", "neo4j")
+        self.neo4j_password = os.getenv("NEO4J_PASSWORD", "Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA")
 
         # Track client state
         self.registered_clients: Dict[str, Dict] = {}  # client_id → registration data
