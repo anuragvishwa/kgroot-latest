@@ -59,19 +59,19 @@ ALERT_TYPE_MAPPING = {
     # Common Prometheus alerts
     "KubePodCrashLooping": EventType.POD_RESTART,
     "KubePodNotReady": EventType.POD_FAILED,
-    "KubeNodeNotReady": EventType.NODE_DOWN,
-    "KubeNodeUnreachable": EventType.NODE_DOWN,
+    "KubeNodeNotReady": EventType.SERVICE_DOWN,
+    "KubeNodeUnreachable": EventType.SERVICE_DOWN,
     "KubeMemoryOvercommit": EventType.MEMORY_HIGH,
     "KubeCPUOvercommit": EventType.CPU_HIGH,
-    "KubePersistentVolumeFillingUp": EventType.DISK_PRESSURE,
-    "KubeDeploymentReplicasMismatch": EventType.DEPLOYMENT_UPDATE,
+    "KubePersistentVolumeFillingUp": EventType.DISK_HIGH,
+    "KubeDeploymentReplicasMismatch": EventType.DEPLOYMENT,
     "KubeJobFailed": EventType.POD_FAILED,
-    "KubeContainerOOMKilled": EventType.MEMORY_HIGH,
+    "KubeContainerOOMKilled": EventType.OOM_KILL,
 
     # Custom alerts
     "HighErrorRate": EventType.ERROR_RATE_HIGH,
     "HighLatency": EventType.LATENCY_HIGH,
-    "ServiceDown": EventType.POD_FAILED,
+    "ServiceDown": EventType.SERVICE_DOWN,
     "DatabaseConnectionFailed": EventType.NETWORK_ERROR,
 }
 
@@ -91,15 +91,15 @@ def map_alert_to_event_type(alert_name: str) -> EventType:
     elif "cpu" in alert_lower:
         return EventType.CPU_HIGH
     elif "disk" in alert_lower or "volume" in alert_lower:
-        return EventType.DISK_PRESSURE
+        return EventType.DISK_HIGH
     elif "network" in alert_lower or "connection" in alert_lower:
         return EventType.NETWORK_ERROR
     elif "error" in alert_lower:
         return EventType.ERROR_RATE_HIGH
     elif "latency" in alert_lower or "slow" in alert_lower:
         return EventType.LATENCY_HIGH
-    elif "node" in alert_lower:
-        return EventType.NODE_DOWN
+    elif "node" in alert_lower or "service" in alert_lower:
+        return EventType.SERVICE_DOWN
 
     return EventType.CUSTOM
 

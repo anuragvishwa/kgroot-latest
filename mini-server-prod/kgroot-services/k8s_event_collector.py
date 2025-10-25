@@ -63,24 +63,24 @@ K8S_EVENT_TYPE_MAPPING = {
     # Pod events
     "BackOff": EventType.POD_RESTART,
     "Failed": EventType.POD_FAILED,
-    "Killing": EventType.POD_KILLED,
+    "Killing": EventType.POD_FAILED,
     "Unhealthy": EventType.HEALTH_CHECK_FAILED,
-    "FailedScheduling": EventType.DEPLOYMENT_UPDATE,
-    "FailedMount": EventType.DISK_PRESSURE,
+    "FailedScheduling": EventType.DEPLOYMENT,
+    "FailedMount": EventType.DISK_HIGH,
 
     # Resource events
-    "OOMKilling": EventType.MEMORY_HIGH,
-    "Evicted": EventType.POD_EVICTED,
+    "OOMKilling": EventType.OOM_KILL,
+    "Evicted": EventType.POD_FAILED,
     "FailedKillPod": EventType.POD_FAILED,
 
     # Node events
-    "NodeNotReady": EventType.NODE_DOWN,
-    "NodeReady": EventType.NODE_RECOVERED,
-    "RegisteredNode": EventType.NODE_RECOVERED,
+    "NodeNotReady": EventType.SERVICE_DOWN,
+    "NodeReady": EventType.CUSTOM,
+    "RegisteredNode": EventType.CUSTOM,
 
     # Network events
     "FailedCreateEndpoint": EventType.NETWORK_ERROR,
-    "FailedAttachVolume": EventType.DISK_PRESSURE,
+    "FailedAttachVolume": EventType.DISK_HIGH,
 
     # Default
     "Warning": EventType.ERROR_RATE_HIGH,
