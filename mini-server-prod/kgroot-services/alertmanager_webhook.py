@@ -339,9 +339,8 @@ async def startup():
                     openai_api_key=config['openai']['api_key'],
                     enable_llm=True,
                     llm_model=config['openai'].get('chat_model', 'gpt-4o'),
-                    neo4j_uri=config.get('neo4j', {}).get('uri'),
-                    neo4j_user=config.get('neo4j', {}).get('user'),
-                    neo4j_password=config.get('neo4j', {}).get('password'),
+                    reasoning_effort=config['openai'].get('reasoning_effort', 'medium'),
+                    verbosity=config['openai'].get('verbosity', 'medium'),
                 )
                 logger.info("✓ RCA Orchestrator initialized")
             else:
