@@ -1,0 +1,208 @@
+# ==============================================================================
+# Client Helm Values for 13-Topic KGroot RCA Architecture
+# ==============================================================================
+#
+# This configuration enables full observability with:
+# - All 13 Kafka topics
+# - State snapshots for topology visualization
+# - Raw + normalized event streams
+# - Resource configuration tracking
+#
+# Expected Accuracy: 85-95% top-3
+# ==============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Client Identification
+# ─────────────────────────────────────────────────────────────────────────────
+client:
+  id: "CLIENT_ID_HERE"  # ⚠️ MUST BE UNIQUE per cluster (e.g., "af-9", "prod-us-east")
+  kafka:
+    brokers: "98.90.147.12:9092"  # Your server IP
+
+cluster:
+  name: "production-us-east"  # Descriptive name
+  region: "us-east-1"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# State Watcher - Publishes to state.k8s.resource & state.k8s.topology
+# ─────────────────────────────────────────────────────────────────────────────
+stateWatcher:
+  enabled: true
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.observability.svc:9090"
+
+  # Resource state snapshots (for RCA accuracy)
+  publishResources: true
+  resourceTopic: "state.k8s.resource"
+  resourceInterval: "30s"  # Snapshot every 30 seconds
+
+  # Topology graph (for Web UI)
+  publishTopology: true
+  topologyTopic: "state.k8s.topology"
+  topologyInterval: "60s"  # Rebuild topology every 60 seconds
+
+  # Prometheus targets (monitoring coverage)
+  publishTargets: true
+  targetsTopic: "state.prom.targets"
+
+  # Watch these resource types
+  watchResources:
+    - pods
+    - services
+    - deployments
+    - statefulsets
+    - daemonsets
+    - replicasets
+    - endpoints
+    - configmaps
+    - persistentvolumeclaims
+    - nodes
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Event Exporter - Publishes to raw.k8s.events (then normalized by server)
+# ─────────────────────────────────────────────────────────────────────────────
+eventExporter:
+  enabled: true
+  rawTopic: "raw.k8s.events"
+
+  # Watch all event types
+  eventTypes:
+    - Normal
+    - Warning
+    - Error
+
+  # Exclude noisy events (optional)
+  excludeReasons:
+    - "Pulling"
+    - "Pulled"
+    - "Created"
+    # - "Started"  # Uncomment to exclude
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Vector Log Shipper - Publishes to raw.k8s.logs (then normalized by server)
+# ─────────────────────────────────────────────────────────────────────────────
+vector:
+  enabled: true
+  rawLogsTopic: "raw.k8s.logs"
+
+  # Log collection settings
+  logLevel: "info"  # Collect: error, warn, info (debug = too much data)
+  bufferSize: "10MB"
+  flushInterval: "5s"
+
+  # Namespace filtering (optional)
+  # includeNamespaces: ["default", "production"]
+  # excludeNamespaces: ["kube-system"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Alert Receiver - Publishes to alerts.raw (enriched by server)
+# ─────────────────────────────────────────────────────────────────────────────
+alertsWebhook:
+  enabled: true
+
+  # Dual webhook: Send alerts to BOTH local receiver AND central server
+  alertmanagerConfig:
+    receivers:
+      - name: "kg-rca-combined"
+        webhook_configs:
+          # Central server webhook (simple, always works)
+          - url: "http://98.90.147.12:8081/webhook"
+            send_resolved: true
+
+          # Local alert receiver → Kafka (advanced, full context)
+          - url: "http://kg-rca-agent-kg-rca-agent-alert-receiver.observability.svc:9093/webhook"
+            send_resolved: true
+
+    route:
+      group_by: [namespace, alertname]
+      group_interval: 5m
+      group_wait: 30s
+      receiver: "kg-rca-combined"
+      repeat_interval: 12h
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cluster Registry - Publishes to cluster.registry & cluster.heartbeat
+# ─────────────────────────────────────────────────────────────────────────────
+clusterRegistry:
+  enabled: true
+  registryTopic: "cluster.registry"
+  heartbeatTopic: "cluster.heartbeat"
+  heartbeatInterval: "30s"  # Heartbeat every 30 seconds
+
+  # Metadata (optional)
+  metadata:
+    environment: "production"
+    owner: "devops-team"
+    tags:
+      - "us-east"
+      - "high-traffic"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resource Limits (adjust based on cluster size)
+# ─────────────────────────────────────────────────────────────────────────────
+resources:
+  stateWatcher:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  eventExporter:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+  vector:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  alertReceiver:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Advanced Settings
+# ─────────────────────────────────────────────────────────────────────────────
+kafka:
+  # Producer settings
+  compression: "lz4"  # Reduce network usage
+  batchSize: "16KB"
+  lingerMs: 10  # Wait 10ms to batch messages
+
+  # Retry settings
+  retries: 3
+  retryBackoffMs: 100
+
+# Security (if Kafka requires authentication)
+# kafka:
+#   sasl:
+#     enabled: false
+#     mechanism: "PLAIN"
+#     username: ""
+#     password: ""
+#   tls:
+#     enabled: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Installation Command
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# helm install kg-rca-agent anuragvishwa/kg-rca-agent \
+#   --version 2.0.2 \
+#   --namespace observability \
+#   --create-namespace \
+#   --values CLIENT-HELM-VALUES-13-TOPIC.yaml
+#
+# ─────────────────────────────────────────────────────────────────────────────

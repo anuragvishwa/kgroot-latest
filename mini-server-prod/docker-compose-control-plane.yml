@@ -97,41 +97,42 @@ services:
       retries: 3
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Control Plane Manager - Dynamic Consumer Spawning (NEW!)
+  # Control Plane Manager V2 - Pure Control Plane Model
+  # Dynamically spawns per-client normalizers and graph builders
   # ───────────────────────────────────────────────────────────────────────────
   kg-control-plane:
-    build: ../control-plane
-    image: anuragvishwa/kg-control-plane:1.0.1
+    build: ./kgroot-services
+    image: anuragvishwa/kg-control-plane:2.0.0
     container_name: kg-control-plane
     hostname: kg-control-plane
     ports:
-      - "9090:9090"  # Prometheus metrics
+      - "9090:9090"  # Prometheus metrics (future)
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock  # Docker API access
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker API access for spawning containers
     environment:
       # Kafka connection
       KAFKA_BROKERS: "kg-kafka:29092"
 
-      # Neo4j connection
-      NEO4J_URI: "neo4j://kg-neo4j:7687"
-      NEO4J_USER: "neo4j"
-      NEO4J_PASS: "Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA"
-
       # Docker settings
       DOCKER_NETWORK: "mini-server-prod_kg-network"
 
-      # Reconciliation settings
-      HEARTBEAT_TIMEOUT: "2m"       # Mark stale after 2min
-      CLEANUP_TIMEOUT: "5m"          # Cleanup after 5min
-      RECONCILE_INTERVAL: "30s"      # Check every 30s
+      # Stale client threshold (cleanup after no heartbeat)
+      STALE_CLIENT_THRESHOLD_MINUTES: "2"
+      HEARTBEAT_CHECK_INTERVAL_SECONDS: "30"
 
-      # Graph-builder settings
-      GRAPH_BUILDER_IMAGE: "anuragvishwa/kg-graph-builder:1.0.20"
-      GB_MEMORY_LIMIT: "256M"
-      GB_CPU_LIMIT: "0.5"
+      # Container images to spawn
+      EVENT_NORMALIZER_IMAGE: "anuragvishwa/kg-event-normalizer:2.0.0"
+      LOG_NORMALIZER_IMAGE: "anuragvishwa/kg-log-normalizer:2.0.0"
+      GRAPH_BUILDER_IMAGE: "anuragvishwa/kg-graph-builder:2.0.0"
+
+      # Neo4j connection (for graph builders)
+      NEO4J_URI: "bolt://kg-neo4j:7687"
+      NEO4J_USER: "neo4j"
+      NEO4J_PASSWORD: "Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA"
     networks:
       - kg-network
     restart: unless-stopped
+    command: ["python", "control-plane/control_plane_manager_v2.py"]
     depends_on:
       kg-kafka:
         condition: service_healthy
@@ -205,6 +206,32 @@ services:
     depends_on:
       - kg-neo4j
     command: ["python", "alertmanager_webhook.py"]
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # NOTE: Event/Log Normalizers are now spawned PER-CLIENT by Control Plane
+  # No standalone normalizers needed - control plane creates them dynamically:
+  #   - kg-event-normalizer-{client-id}
+  #   - kg-log-normalizer-{client-id}
+  #   - kg-graph-builder-{client-id}
+  # ───────────────────────────────────────────────────────────────────────────
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Topology Builder - state.k8s.resource → state.k8s.topology (SHARED)
+  # This runs as single instance since topology aggregates all clients
+  # ───────────────────────────────────────────────────────────────────────────
+  kg-topology-builder:
+    build: ./kgroot-services
+    image: anuragvishwa/kg-topology-builder:1.0.0
+    container_name: kg-topology-builder
+    hostname: kg-topology-builder
+    environment:
+      KAFKA_BROKERS: "kg-kafka:29092"
+    networks:
+      - kg-network
+    restart: unless-stopped
+    depends_on:
+      - kg-kafka
+    command: ["python", "topology/topology_builder.py"]
 
   # ───────────────────────────────────────────────────────────────────────────
   # KGroot RCA - K8s Event Collector (optional, requires kubeconfig)
