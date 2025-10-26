@@ -28,11 +28,6 @@ services:
     command: ["python3", "-m", "uvicorn", "rca_api_service:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
     networks:
       - kg-network
-    depends_on:
-      kg-kafka:
-        condition: service_healthy
-      kg-neo4j:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
