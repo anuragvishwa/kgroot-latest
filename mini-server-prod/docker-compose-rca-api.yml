@@ -8,7 +8,7 @@ services:
     image: anuragvishwa/kg-rca-api:1.0.0
     container_name: kg-rca-api
     ports:
-      - "8080:8080"
+      - "8082:8080"
     environment:
       # OpenAI Configuration
       - OPENAI_API_KEY=${OPENAI_API_KEY}
