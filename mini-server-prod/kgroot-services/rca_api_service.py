@@ -17,7 +17,7 @@ from neo4j import GraphDatabase
 from kafka import KafkaConsumer
 
 from rca_orchestrator import RCAOrchestrator, RCAResult
-from models.event import Event, EventType
+from models.event import Event, EventType, EventSeverity
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
