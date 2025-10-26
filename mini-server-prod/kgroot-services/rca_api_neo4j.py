@@ -37,7 +37,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
 rca_orchestrator = RCAOrchestrator(
     enable_llm=ENABLE_LLM,
     openai_api_key=OPENAI_API_KEY,
-    model_name=LLM_MODEL,
+    llm_model=LLM_MODEL,
     reasoning_effort="medium",
     verbosity="medium"
 )
