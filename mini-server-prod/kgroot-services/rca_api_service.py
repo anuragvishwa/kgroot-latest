@@ -272,16 +272,22 @@ async def collect_events_for_incident(
     consumer = KafkaConsumer(
         'events.normalized',
         bootstrap_servers=KAFKA_BROKERS,
-        auto_offset_reset='latest',
+        auto_offset_reset='earliest',  # Read from beginning to get historical events
         value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m else None,
-        consumer_timeout_ms=10000
+        consumer_timeout_ms=30000  # Increased to 30 seconds
     )
 
     events = []
     cutoff_time = datetime.utcnow() - timedelta(minutes=time_window_minutes)
+    messages_processed = 0
+    messages_filtered = 0
+
+    logger.info(f"   Collecting events from Kafka (time_window={time_window_minutes}m, namespace={namespace}, pod={pod_name})")
 
     try:
         for message in consumer:
+            messages_processed += 1
+
             if message.value is None:
                 continue
 
@@ -311,11 +317,13 @@ async def collect_events_for_incident(
             events.append(event)
 
             if len(events) >= 1000:  # Limit to prevent memory issues
+                logger.info(f"   Hit max event limit (1000), stopping collection")
                 break
 
     finally:
         consumer.close()
 
+    logger.info(f"   Kafka consumer stats: processed={messages_processed}, matched={len(events)}")
     return events
 
 
