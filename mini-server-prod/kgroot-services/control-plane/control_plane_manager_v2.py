@@ -73,7 +73,7 @@ class ControlPlaneManagerV2:
             'cluster.registry',
             bootstrap_servers=kafka_brokers,
             group_id='control-plane-registry',
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m else None,
             key_deserializer=lambda k: k.decode('utf-8') if k else None,
             auto_offset_reset='earliest',  # Read all registrations from beginning
             enable_auto_commit=True,
@@ -83,7 +83,7 @@ class ControlPlaneManagerV2:
             'cluster.heartbeat',
             bootstrap_servers=kafka_brokers,
             group_id='control-plane-heartbeat',
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m else None,
             key_deserializer=lambda k: k.decode('utf-8') if k else None,
             auto_offset_reset='latest',  # Only care about recent heartbeats
             enable_auto_commit=True,
@@ -239,6 +239,11 @@ class ControlPlaneManagerV2:
     def _process_registry_message(self, message):
         """Process client registration"""
         try:
+            # Skip tombstone messages (None values)
+            if message.value is None:
+                logger.debug("Skipping tombstone message in cluster.registry")
+                return
+
             client_id = message.value.get('client_id')
             if not client_id:
                 logger.warning("⚠️  Registry message missing client_id")
@@ -262,6 +267,11 @@ class ControlPlaneManagerV2:
     def _process_heartbeat_message(self, message):
         """Process client heartbeat"""
         try:
+            # Skip tombstone messages (None values)
+            if message.value is None:
+                logger.debug("Skipping tombstone message in cluster.heartbeat")
+                return
+
             client_id = message.value.get('client_id')
             if not client_id:
                 return
