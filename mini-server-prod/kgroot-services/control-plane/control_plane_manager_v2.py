@@ -76,7 +76,19 @@ class ControlPlaneManagerV2:
                 decoded = m.decode('utf-8').strip()
                 if not decoded:
                     return None
-                return json.loads(decoded)
+
+                # Try standard JSON parsing first
+                try:
+                    return json.loads(decoded)
+                except json.JSONDecodeError as e:
+                    # If "Extra data" error, try to extract first valid JSON object
+                    if "Extra data" in str(e):
+                        decoder = json.JSONDecoder()
+                        obj, idx = decoder.raw_decode(decoded)
+                        logger.debug(f"Extracted JSON from message with extra data (ignored {len(decoded)-idx} chars)")
+                        return obj
+                    raise
+
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning(f"Failed to deserialize message: {e} - skipping")
                 return None
