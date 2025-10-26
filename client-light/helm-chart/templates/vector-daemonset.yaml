@@ -52,7 +52,7 @@ data:
     .pod_name = pod_name
 
     # Create message key with client_id prefix
-    .message_key = join!(["{{ .Values.client.id }}", pod_uid], "::")
+    .message_key = "{{ .Values.client.id }}::" + pod_uid
     '''
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -71,12 +71,8 @@ data:
     source = '''
     # Use groupKey or externalURL as message key for partitioning
     key = string(.groupKey) ?? string(.externalURL) ?? uuid_v4()
-    client_id = get_env_var("CLIENT_ID")
-    if is_null(client_id) || client_id == "" {
-      .message_key = key
-    } else {
-      .message_key = join!([client_id, key], "::")
-    }
+    client_id = get_env_var("CLIENT_ID") ?? "{{ .Values.client.id }}"
+    .message_key = client_id + "::" + key
     '''
 
     # Explode/unwrap Alertmanager payloads into single alerts
