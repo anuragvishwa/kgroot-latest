@@ -13,9 +13,9 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: register
-        image: confluentinc/cp-kafka:7.5.0
+        image: edenhill/kcat:1.7.1
         command:
-        - /bin/bash
+        - /bin/sh
         - -c
         - |
           echo "📝 Registering cluster {{ .Values.client.id }}..."
@@ -23,18 +23,12 @@ spec:
           # Create registration message (minified JSON on single line)
           REGISTRATION='{"client_id":"{{ .Values.client.id }}","cluster_name":"{{ .Values.cluster.name | default .Values.client.id }}","version":"{{ .Chart.Version }}","registered_at":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","metadata":{"namespace":"{{ .Release.Namespace }}","release_name":"{{ .Release.Name }}","chart_version":"{{ .Chart.Version }}"}}'
 
-          # Send to Kafka
-          echo "{{ .Values.client.id }}:$REGISTRATION" | kafka-console-producer \
-            --bootstrap-server {{ .Values.client.kafka.brokers }} \
-            --topic cluster.registry \
-            --property "parse.key=true" \
-            --property "key.separator=:" \
-            {{- if .Values.client.kafka.sasl.enabled }}
-            --producer-property "security.protocol={{ .Values.client.kafka.sasl.mechanism }}" \
-            --producer-property "sasl.mechanism={{ .Values.client.kafka.sasl.mechanism }}" \
-            --producer-property "sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"{{ .Values.client.kafka.sasl.username }}\" password=\"{{ .Values.client.kafka.sasl.password }}\";" \
-            {{- end }}
-            2>&1
+          # Send to Kafka using kcat (kafkacat)
+          echo "$REGISTRATION" | kcat -P \
+            -b {{ .Values.client.kafka.brokers }} \
+            -t cluster.registry \
+            -K: \
+            -k "{{ .Values.client.id }}"
 
           if [ $? -eq 0 ]; then
             echo "✅ Cluster {{ .Values.client.id }} registered successfully!"

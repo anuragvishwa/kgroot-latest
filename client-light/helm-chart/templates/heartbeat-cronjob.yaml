@@ -17,15 +17,15 @@ spec:
           restartPolicy: Never
           containers:
           - name: heartbeat
-            image: confluentinc/cp-kafka:7.5.0
+            image: edenhill/kcat:1.7.1
             command:
               - /bin/sh
               - -c
               - |
-                echo '{{ .Values.client.id }}::{"client_id":"{{ .Values.client.id }}","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' | \
-                kafka-console-producer \
-                  --bootstrap-server {{ .Values.client.kafka.brokers }} \
-                  --topic cluster.heartbeat \
-                  --property "parse.key=true" \
-                  --property "key.separator=::"
+                HEARTBEAT='{"client_id":"{{ .Values.client.id }}","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
+                echo "$HEARTBEAT" | kcat -P \
+                  -b {{ .Values.client.kafka.brokers }} \
+                  -t cluster.heartbeat \
+                  -K:: \
+                  -k "{{ .Values.client.id }}"
 {{- end }}
