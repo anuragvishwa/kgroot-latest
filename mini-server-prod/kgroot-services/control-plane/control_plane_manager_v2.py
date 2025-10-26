@@ -73,7 +73,7 @@ class ControlPlaneManagerV2:
             'cluster.registry',
             bootstrap_servers=kafka_brokers,
             group_id='control-plane-registry',
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m else None,
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m and m.decode('utf-8').strip() else None,
             key_deserializer=lambda k: k.decode('utf-8') if k else None,
             auto_offset_reset='earliest',  # Read all registrations from beginning
             enable_auto_commit=True,
@@ -83,7 +83,7 @@ class ControlPlaneManagerV2:
             'cluster.heartbeat',
             bootstrap_servers=kafka_brokers,
             group_id='control-plane-heartbeat',
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m else None,
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m and m.decode('utf-8').strip() else None,
             key_deserializer=lambda k: k.decode('utf-8') if k else None,
             auto_offset_reset='latest',  # Only care about recent heartbeats
             enable_auto_commit=True,
