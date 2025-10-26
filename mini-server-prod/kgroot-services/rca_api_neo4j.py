@@ -109,12 +109,16 @@ async def query_neo4j_for_rca(
         where_clause = " AND ".join(filters) if filters else "1=1"
 
         # Comprehensive query
+        # Note: OPTIONAL MATCH for Resource because some events might not have ABOUT relationship yet
         query = f"""
         // Get episodic events (events + logs) with context
-        MATCH (e:Episodic)-[:ABOUT]->(r:Resource)
+        MATCH (e:Episodic)
         WHERE e.event_time > datetime('{cutoff_str}')
           AND e.client_id = $client_id
-          AND {where_clause}
+
+        // OPTIONAL: Get related resource (may not exist yet)
+        OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource)
+        WHERE {where_clause}
 
         // Get causes with confidence
         OPTIONAL MATCH (cause:Episodic)-[pc:POTENTIAL_CAUSE]->(e)
