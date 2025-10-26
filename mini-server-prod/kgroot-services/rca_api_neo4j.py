@@ -166,7 +166,9 @@ async def query_neo4j_for_rca(
         causes_map = {}
         topology = {}
 
-        with driver.session(database=client_id) as session:
+        # Note: Neo4j Community Edition only supports one database (neo4j)
+        # Enterprise Edition would use: database=client_id
+        with driver.session(database="neo4j") as session:
             result = session.run(query, client_id=client_id)
 
             for rec in result:
