@@ -68,12 +68,25 @@ class ControlPlaneManagerV2:
         self.last_heartbeat: Dict[str, datetime] = {}  # client_id → last heartbeat time
         self.spawned_containers: Dict[str, Set[str]] = defaultdict(set)  # client_id → {container_ids}
 
+        # Safe JSON deserializer that handles malformed messages
+        def safe_json_deserializer(m):
+            if not m:
+                return None
+            try:
+                decoded = m.decode('utf-8').strip()
+                if not decoded:
+                    return None
+                return json.loads(decoded)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.warning(f"Failed to deserialize message: {e} - skipping")
+                return None
+
         # Kafka consumers
         self.registry_consumer = KafkaConsumer(
             'cluster.registry',
             bootstrap_servers=kafka_brokers,
             group_id='control-plane-registry',
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m and m.decode('utf-8').strip() else None,
+            value_deserializer=safe_json_deserializer,
             key_deserializer=lambda k: k.decode('utf-8') if k else None,
             auto_offset_reset='earliest',  # Read all registrations from beginning
             enable_auto_commit=True,
@@ -83,7 +96,7 @@ class ControlPlaneManagerV2:
             'cluster.heartbeat',
             bootstrap_servers=kafka_brokers,
             group_id='control-plane-heartbeat',
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m and m.decode('utf-8').strip() else None,
+            value_deserializer=safe_json_deserializer,
             key_deserializer=lambda k: k.decode('utf-8') if k else None,
             auto_offset_reset='latest',  # Only care about recent heartbeats
             enable_auto_commit=True,
