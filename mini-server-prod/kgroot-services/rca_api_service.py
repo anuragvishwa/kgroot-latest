@@ -260,6 +260,28 @@ async def trigger_rca_analysis(request: RCARequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def map_normalized_event_type_to_event_type(normalized_type: str) -> EventType:
+    """Map normalized event types (POD_CRASH_LOOP) to EventType enum values"""
+    mapping = {
+        'POD_CRASH_LOOP': EventType.POD_RESTART,
+        'POD_FAILED': EventType.POD_FAILED,
+        'POD_BACKOFF': EventType.POD_RESTART,
+        'MEMORY_OOM': EventType.OOM_KILL,
+        'MEMORY_HIGH': EventType.MEMORY_HIGH,
+        'CPU_HIGH': EventType.CPU_HIGH,
+        'DISK_HIGH': EventType.DISK_HIGH,
+        'HEALTH_CHECK_FAILED': EventType.HEALTH_CHECK_FAILED,
+        'SERVICE_DOWN': EventType.SERVICE_DOWN,
+        'NODE_NOT_READY': EventType.SERVICE_DOWN,
+        'NETWORK_NOT_READY': EventType.NETWORK_ERROR,
+        'NETWORK_SETUP_FAILED': EventType.NETWORK_ERROR,
+        'POD_EVICTED': EventType.POD_FAILED,
+        'SCHEDULING_FAILED': EventType.POD_FAILED,
+        'VOLUME_MOUNT_FAILED': EventType.CONFIG_CHANGE,
+    }
+    return mapping.get(normalized_type.upper(), EventType.CUSTOM)
+
+
 async def collect_events_for_incident(
     client_id: str,
     time_window_minutes: int,
@@ -312,9 +334,37 @@ async def collect_events_for_incident(
                 except:
                     pass
 
-            # Convert to Event object
-            event = Event.from_k8s_event(event_data)
-            events.append(event)
+            # Convert normalized Kafka event to Event object
+            try:
+                normalized_event_type = event_data.get('event_type_abstract', 'CUSTOM')
+                event_type = map_normalized_event_type_to_event_type(normalized_event_type)
+
+                severity_str = event_data.get('severity', 'INFO').lower()
+                if severity_str == 'error':
+                    severity_str = 'critical'  # Map ERROR to CRITICAL
+                severity = EventSeverity(severity_str)
+
+                event = Event(
+                    event_id=event_data.get('event_id', event_data.get('raw_event_id', 'unknown')),
+                    event_type=event_type,
+                    timestamp=datetime.fromisoformat(event_data['timestamp'].replace('Z', '+00:00')),
+                    service=event_data.get('service') or event_data.get('involved_object_name', 'unknown'),
+                    namespace=event_data['namespace'],
+                    severity=severity,
+                    pod_name=event_data.get('pod_name'),
+                    node=event_data.get('node'),
+                    message=event_data.get('message'),
+                    details={
+                        'reason': event_data.get('reason'),
+                        'involved_object_kind': event_data.get('involved_object_kind'),
+                        'involved_object_name': event_data.get('involved_object_name'),
+                        'cluster_name': event_data.get('cluster_name'),
+                        'normalized_event_type': normalized_event_type
+                    }
+                )
+                events.append(event)
+            except (KeyError, ValueError) as e:
+                logger.warning(f"   Skipping malformed event: {e} - data: {event_data}")
 
             if len(events) >= 1000:  # Limit to prevent memory issues
                 logger.info(f"   Hit max event limit (1000), stopping collection")
