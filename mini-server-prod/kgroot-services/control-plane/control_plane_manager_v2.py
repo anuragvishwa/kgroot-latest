@@ -1,5 +1,14 @@
 """
-Control Plane Manager V2 - Pure Control Plane Model
+Control Plane Manager V2 - Production-Hardened Version
+
+Improvements:
+1. Thread-safe state management with locks
+2. Quarantine/backoff to prevent container thrashing
+3. Label-based container tracking (bulletproof existence checks)
+4. Adopt existing containers on restart (no orphans)
+5. Timestamp validation for heartbeat messages
+6. Prometheus metrics for full observability
+7. Graceful drain before cleanup (future: send control message)
 
 Responsibilities:
 1. Monitor cluster.registry for new client registrations
@@ -10,18 +19,6 @@ Responsibilities:
    - kg-graph-builder-{client-id}
 4. Clean up stale clients (no heartbeat for 2 minutes)
 5. Manage Neo4j graph isolation per client
-
-Architecture:
-  Client "af-9" publishes to cluster.registry
-    ↓
-  Control Plane detects new client
-    ↓
-  Spawns containers:
-    - kg-event-normalizer-af-9 (consumer group: "event-normalizer-af-9")
-    - kg-log-normalizer-af-9 (consumer group: "log-normalizer-af-9")
-    - kg-graph-builder-af-9 (consumer group: "graph-builder-af-9")
-    ↓
-  Each container reads from SHARED topics but isolated via consumer groups
 """
 
 import json
@@ -33,6 +30,8 @@ from datetime import datetime, timedelta
 from kafka import KafkaConsumer
 from collections import defaultdict
 import threading
+from prometheus_client import Counter, Gauge, start_http_server
+from docker.errors import NotFound, APIError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,11 +39,31 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Prometheus Metrics
+# ═══════════════════════════════════════════════════════════════════════════
+clients_registered = Gauge('control_plane_clients_registered', 'Number of registered clients')
+containers_spawned = Gauge('control_plane_containers_spawned', 'Number of active containers')
+container_spawn_total = Counter('control_plane_container_spawn_total', 'Total container spawns', ['role', 'client_id'])
+container_cleanup_total = Counter('control_plane_container_cleanup_total', 'Total container cleanups', ['client_id'])
+stale_client_total = Counter('control_plane_stale_client_total', 'Total stale client detections', ['client_id'])
+respawn_total = Counter('control_plane_respawn_total', 'Total auto-respawns', ['client_id'])
+spawn_errors_total = Counter('control_plane_spawn_errors_total', 'Total spawn errors', ['role', 'client_id'])
+quarantine_blocks_total = Counter('control_plane_quarantine_blocks_total', 'Total respawns blocked by quarantine', ['client_id'])
+
 
 class ControlPlaneManagerV2:
     """
-    Manages per-client container lifecycle based on registry and heartbeat
+    Production-hardened control plane for per-client container lifecycle management
     """
+
+    # Container labels for tracking
+    LABEL_ROLE = "kg.role"
+    LABEL_CLIENT = "kg.client"
+    LABEL_MANAGED_BY = "kg.managed-by"
+
+    # Quarantine period after cleanup (prevents thrashing)
+    QUARANTINE_SECONDS = 60
 
     def __init__(self, kafka_brokers: str, docker_network: str = "mini-server-prod_kg-network"):
         import os
@@ -63,10 +82,14 @@ class ControlPlaneManagerV2:
         self.neo4j_user = os.getenv("NEO4J_USER", "neo4j")
         self.neo4j_password = os.getenv("NEO4J_PASSWORD", "Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA")
 
+        # Thread-safe state management
+        self.state_lock = threading.RLock()  # Reentrant lock for nested calls
+
         # Track client state
         self.registered_clients: Dict[str, Dict] = {}  # client_id → registration data
         self.last_heartbeat: Dict[str, datetime] = {}  # client_id → last heartbeat time
         self.spawned_containers: Dict[str, Set[str]] = defaultdict(set)  # client_id → {container_ids}
+        self.quarantine_until: Dict[str, datetime] = {}  # client_id → when quarantine ends
 
         # Safe JSON deserializer that handles malformed messages
         def safe_json_deserializer(m):
@@ -117,28 +140,83 @@ class ControlPlaneManagerV2:
             enable_auto_commit=True,
         )
 
-        logger.info("✅ Control Plane Manager V2 initialized")
+        logger.info("✅ Control Plane Manager V2 (Hardened) initialized")
         logger.info(f"   Kafka brokers: {kafka_brokers}")
         logger.info(f"   Docker network: {docker_network}")
+        logger.info(f"   Quarantine period: {self.QUARANTINE_SECONDS}s")
+
+    def _adopt_existing_containers(self):
+        """
+        On startup, discover existing containers with our labels and adopt them.
+        This prevents double-spawning and ensures we track all managed containers.
+        """
+        logger.info("🔍 Scanning for existing managed containers...")
+
+        try:
+            # Find all containers with our management label
+            filters = {
+                "label": [f"{self.LABEL_MANAGED_BY}=control-plane"]
+            }
+            existing = self.docker_client.containers.list(filters=filters)
+
+            adopted_count = 0
+            for container in existing:
+                labels = container.labels
+                client_id = labels.get(self.LABEL_CLIENT)
+                role = labels.get(self.LABEL_ROLE)
+
+                if client_id and role:
+                    with self.state_lock:
+                        self.spawned_containers[client_id].add(container.id)
+                    adopted_count += 1
+                    logger.info(f"   📦 Adopted {role} for client {client_id} (ID: {container.short_id})")
+
+            if adopted_count > 0:
+                logger.info(f"✅ Adopted {adopted_count} existing containers")
+            else:
+                logger.info("   No existing containers to adopt")
+
+        except Exception as e:
+            logger.error(f"Failed to adopt existing containers: {e}", exc_info=True)
+
+    def _container_exists(self, container_name: str) -> Optional[str]:
+        """
+        Check if container exists by name. Returns container ID if exists, None otherwise.
+        Uses docker API get() to avoid substring matching issues with list().
+        """
+        try:
+            container = self.docker_client.containers.get(container_name)
+            return container.id
+        except NotFound:
+            return None
+        except Exception as e:
+            logger.error(f"Error checking container existence: {e}")
+            return None
 
     def _spawn_event_normalizer(self, client_id: str) -> Optional[str]:
         """Spawn event normalizer for specific client"""
         container_name = f"kg-event-normalizer-{client_id}"
+        role = "event-normalizer"
 
         try:
-            # Check if already exists
-            existing = self.docker_client.containers.list(filters={"name": container_name})
-            if existing:
+            # Check if already exists (bulletproof)
+            existing_id = self._container_exists(container_name)
+            if existing_id:
                 logger.info(f"   ✅ Event normalizer already exists: {container_name}")
-                return existing[0].id
+                return existing_id
 
-            # Spawn new container
+            # Spawn new container with labels
             container = self.docker_client.containers.run(
                 image=self.event_normalizer_image,
                 name=container_name,
                 environment={
                     "KAFKA_BROKERS": self.kafka_brokers,
-                    "CLIENT_ID": client_id,  # ← KEY: Client ID passed as env var
+                    "CLIENT_ID": client_id,
+                },
+                labels={
+                    self.LABEL_ROLE: role,
+                    self.LABEL_CLIENT: client_id,
+                    self.LABEL_MANAGED_BY: "control-plane",
                 },
                 network=self.docker_network,
                 detach=True,
@@ -147,21 +225,24 @@ class ControlPlaneManagerV2:
             )
 
             logger.info(f"   ✅ Spawned event normalizer: {container_name} (ID: {container.short_id})")
+            container_spawn_total.labels(role=role, client_id=client_id).inc()
             return container.id
 
         except Exception as e:
             logger.error(f"   ❌ Failed to spawn event normalizer for {client_id}: {e}")
+            spawn_errors_total.labels(role=role, client_id=client_id).inc()
             return None
 
     def _spawn_log_normalizer(self, client_id: str) -> Optional[str]:
         """Spawn log normalizer for specific client"""
         container_name = f"kg-log-normalizer-{client_id}"
+        role = "log-normalizer"
 
         try:
-            existing = self.docker_client.containers.list(filters={"name": container_name})
-            if existing:
+            existing_id = self._container_exists(container_name)
+            if existing_id:
                 logger.info(f"   ✅ Log normalizer already exists: {container_name}")
-                return existing[0].id
+                return existing_id
 
             container = self.docker_client.containers.run(
                 image=self.log_normalizer_image,
@@ -170,6 +251,11 @@ class ControlPlaneManagerV2:
                     "KAFKA_BROKERS": self.kafka_brokers,
                     "CLIENT_ID": client_id,
                 },
+                labels={
+                    self.LABEL_ROLE: role,
+                    self.LABEL_CLIENT: client_id,
+                    self.LABEL_MANAGED_BY: "control-plane",
+                },
                 network=self.docker_network,
                 detach=True,
                 restart_policy={"Name": "unless-stopped"},
@@ -177,21 +263,24 @@ class ControlPlaneManagerV2:
             )
 
             logger.info(f"   ✅ Spawned log normalizer: {container_name} (ID: {container.short_id})")
+            container_spawn_total.labels(role=role, client_id=client_id).inc()
             return container.id
 
         except Exception as e:
             logger.error(f"   ❌ Failed to spawn log normalizer for {client_id}: {e}")
+            spawn_errors_total.labels(role=role, client_id=client_id).inc()
             return None
 
     def _spawn_graph_builder(self, client_id: str) -> Optional[str]:
         """Spawn graph builder for specific client"""
         container_name = f"kg-graph-builder-{client_id}"
+        role = "graph-builder"
 
         try:
-            existing = self.docker_client.containers.list(filters={"name": container_name})
-            if existing:
+            existing_id = self._container_exists(container_name)
+            if existing_id:
                 logger.info(f"   ✅ Graph builder already exists: {container_name}")
-                return existing[0].id
+                return existing_id
 
             container = self.docker_client.containers.run(
                 image=self.graph_builder_image,
@@ -201,8 +290,13 @@ class ControlPlaneManagerV2:
                     "CLIENT_ID": client_id,
                     "NEO4J_URI": self.neo4j_uri,
                     "NEO4J_USER": self.neo4j_user,
-                    "NEO4J_PASS": self.neo4j_password,  # ← Go binary uses NEO4J_PASS not NEO4J_PASSWORD
-                    "NEO4J_DATABASE": client_id,  # ← Separate database per client
+                    "NEO4J_PASS": self.neo4j_password,
+                    "NEO4J_DATABASE": client_id,  # Separate database per client
+                },
+                labels={
+                    self.LABEL_ROLE: role,
+                    self.LABEL_CLIENT: client_id,
+                    self.LABEL_MANAGED_BY: "control-plane",
                 },
                 network=self.docker_network,
                 detach=True,
@@ -211,76 +305,99 @@ class ControlPlaneManagerV2:
             )
 
             logger.info(f"   ✅ Spawned graph builder: {container_name} (ID: {container.short_id})")
+            container_spawn_total.labels(role=role, client_id=client_id).inc()
             return container.id
 
         except Exception as e:
             logger.error(f"   ❌ Failed to spawn graph builder for {client_id}: {e}")
+            spawn_errors_total.labels(role=role, client_id=client_id).inc()
             return None
 
     def _spawn_all_for_client(self, client_id: str, registration_data: Dict):
-        """Spawn all required containers for a client"""
-        logger.info(f"🚀 Spawning containers for client: {client_id}")
-        logger.info(f"   Cluster: {registration_data.get('cluster_name', 'unknown')}")
+        """Spawn all required containers for a client (thread-safe)"""
+        with self.state_lock:
+            logger.info(f"🚀 Spawning containers for client: {client_id}")
+            logger.info(f"   Cluster: {registration_data.get('cluster_name', 'unknown')}")
 
-        spawned_ids = set()
+            spawned_ids = set()
 
-        # Spawn event normalizer
-        event_norm_id = self._spawn_event_normalizer(client_id)
-        if event_norm_id:
-            spawned_ids.add(event_norm_id)
+            # Spawn event normalizer
+            event_norm_id = self._spawn_event_normalizer(client_id)
+            if event_norm_id:
+                spawned_ids.add(event_norm_id)
 
-        # Spawn log normalizer
-        log_norm_id = self._spawn_log_normalizer(client_id)
-        if log_norm_id:
-            spawned_ids.add(log_norm_id)
+            # Spawn log normalizer
+            log_norm_id = self._spawn_log_normalizer(client_id)
+            if log_norm_id:
+                spawned_ids.add(log_norm_id)
 
-        # Spawn graph builder
-        graph_id = self._spawn_graph_builder(client_id)
-        if graph_id:
-            spawned_ids.add(graph_id)
+            # Spawn graph builder
+            graph_id = self._spawn_graph_builder(client_id)
+            if graph_id:
+                spawned_ids.add(graph_id)
 
-        self.spawned_containers[client_id] = spawned_ids
+            self.spawned_containers[client_id] = spawned_ids
 
-        logger.info(f"✅ Successfully spawned {len(spawned_ids)} containers for client {client_id}")
+            logger.info(f"✅ Successfully spawned {len(spawned_ids)} containers for client {client_id}")
+
+            # Update metrics
+            containers_spawned.set(sum(len(c) for c in self.spawned_containers.values()))
 
     def _cleanup_client(self, client_id: str):
-        """Stop and remove all containers for a stale client"""
-        logger.info(f"🧹 Cleaning up stale client: {client_id}")
+        """Stop and remove all containers for a stale client (thread-safe)"""
+        with self.state_lock:
+            logger.info(f"🧹 Cleaning up stale client: {client_id}")
 
-        if client_id not in self.spawned_containers:
-            logger.info(f"   No containers to clean up for {client_id}")
-            return
+            if client_id not in self.spawned_containers:
+                logger.info(f"   No containers to clean up for {client_id}")
+                return
 
-        for container_id in self.spawned_containers[client_id]:
-            try:
-                container = self.docker_client.containers.get(container_id)
-                container.stop(timeout=10)
-                container.remove()
-                logger.info(f"   ✅ Stopped and removed container: {container.name}")
-            except Exception as e:
-                logger.error(f"   ❌ Failed to remove container {container_id}: {e}")
+            # Future: Send graceful drain signal to containers before stopping
+            # For now, just stop them
 
-        del self.spawned_containers[client_id]
-        # NOTE: We keep registered_clients[client_id] so we can re-spawn if heartbeat resumes
-        # Only delete last_heartbeat to mark as stale
-        if client_id in self.last_heartbeat:
-            del self.last_heartbeat[client_id]
-        logger.info(f"✅ Cleanup complete for client {client_id} (registration preserved for auto-respawn)")
+            for container_id in self.spawned_containers[client_id]:
+                try:
+                    container = self.docker_client.containers.get(container_id)
+                    container.stop(timeout=10)
+                    container.remove()
+                    logger.info(f"   ✅ Stopped and removed container: {container.name}")
+                except Exception as e:
+                    logger.error(f"   ❌ Failed to remove container {container_id}: {e}")
+
+            del self.spawned_containers[client_id]
+
+            # Set quarantine period to prevent immediate thrashing
+            self.quarantine_until[client_id] = datetime.utcnow() + timedelta(seconds=self.QUARANTINE_SECONDS)
+
+            # NOTE: We keep registered_clients[client_id] so we can re-spawn if heartbeat resumes
+            # Only delete last_heartbeat to mark as stale
+            if client_id in self.last_heartbeat:
+                del self.last_heartbeat[client_id]
+
+            logger.info(f"✅ Cleanup complete for client {client_id} (quarantined for {self.QUARANTINE_SECONDS}s)")
+
+            # Update metrics
+            container_cleanup_total.labels(client_id=client_id).inc()
+            containers_spawned.set(sum(len(c) for c in self.spawned_containers.values()))
 
     def _process_registry_message(self, message):
-        """Process client registration"""
+        """Process client registration (thread-safe)"""
         try:
-            # Skip tombstone messages (None values) - deserializer returns None for empty/invalid messages
+            # Skip tombstone messages (None values)
             if message.value is None:
                 logger.debug("Skipping invalid/empty message in cluster.registry")
                 return
 
-            # Deserializer already parsed JSON, so message.value should be a dict
             message_data = message.value
 
             # If for some reason it's still a string, try to parse it
             if isinstance(message_data, str):
-                logger.warning(f"Unexpected string message in registry (deserializer should have parsed it): {message_data[:100]}")
+                # Skip if it's just a key/identifier without JSON structure
+                if not message_data.strip().startswith('{'):
+                    logger.debug(f"Skipping non-JSON string message in registry: {message_data[:100]}")
+                    return
+
+                logger.warning(f"Unexpected string message in registry: {message_data[:100]}")
                 try:
                     message_data = json.loads(message_data)
                 except json.JSONDecodeError as e:
@@ -292,23 +409,27 @@ class ControlPlaneManagerV2:
                 logger.warning("⚠️  Registry message missing client_id")
                 return
 
-            # Check if this is a new client
-            if client_id not in self.registered_clients:
-                logger.info(f"📋 New client registered: {client_id}")
-                self.registered_clients[client_id] = message_data
-                self.last_heartbeat[client_id] = datetime.utcnow()
+            with self.state_lock:
+                # Check if this is a new client
+                if client_id not in self.registered_clients:
+                    logger.info(f"📋 New client registered: {client_id}")
+                    self.registered_clients[client_id] = message_data
+                    self.last_heartbeat[client_id] = datetime.utcnow()
 
-                # Spawn containers for this client
-                self._spawn_all_for_client(client_id, message_data)
-            else:
-                # Update registration data
-                self.registered_clients[client_id] = message_data
+                    # Update metrics
+                    clients_registered.set(len(self.registered_clients))
+
+                    # Spawn containers for this client
+                    self._spawn_all_for_client(client_id, message_data)
+                else:
+                    # Update registration data
+                    self.registered_clients[client_id] = message_data
 
         except Exception as e:
             logger.error(f"Error processing registry message: {e}", exc_info=True)
 
     def _process_heartbeat_message(self, message):
-        """Process client heartbeat"""
+        """Process client heartbeat (thread-safe with timestamp validation)"""
         try:
             # Skip tombstone messages (None values)
             if message.value is None:
@@ -319,29 +440,59 @@ class ControlPlaneManagerV2:
             if not client_id:
                 return
 
-            # Update last heartbeat time
-            self.last_heartbeat[client_id] = datetime.utcnow()
+            # Validate heartbeat timestamp (optional but recommended)
+            heartbeat_ts_str = message.value.get('timestamp')
+            if heartbeat_ts_str:
+                try:
+                    heartbeat_ts = datetime.fromisoformat(heartbeat_ts_str.replace('Z', '+00:00'))
+                    now = datetime.utcnow()
+                    age_seconds = (now - heartbeat_ts.replace(tzinfo=None)).total_seconds()
 
-            # AUTO-RESPAWN: If client was previously stale and containers were killed,
-            # but heartbeat resumed, re-spawn containers automatically
-            if client_id in self.registered_clients and client_id not in self.spawned_containers:
-                logger.info(f"🔄 Heartbeat resumed for stale client {client_id} - re-spawning containers")
-                self._spawn_all_for_client(client_id, self.registered_clients[client_id])
+                    # Warn if heartbeat is too old (e.g., > 5 minutes)
+                    if age_seconds > 300:
+                        logger.warning(f"⚠️  Heartbeat for {client_id} is {age_seconds:.0f}s old")
+                except Exception as e:
+                    logger.debug(f"Could not parse heartbeat timestamp: {e}")
+
+            with self.state_lock:
+                # Update last heartbeat time
+                self.last_heartbeat[client_id] = datetime.utcnow()
+
+                # AUTO-RESPAWN: If client was previously stale and containers were killed,
+                # but heartbeat resumed, re-spawn containers automatically
+                if client_id in self.registered_clients and client_id not in self.spawned_containers:
+
+                    # Check quarantine period (prevent thrashing)
+                    if client_id in self.quarantine_until:
+                        if datetime.utcnow() < self.quarantine_until[client_id]:
+                            logger.debug(f"🚫 Respawn blocked for {client_id} (still in quarantine)")
+                            quarantine_blocks_total.labels(client_id=client_id).inc()
+                            return
+                        else:
+                            # Quarantine expired
+                            del self.quarantine_until[client_id]
+
+                    logger.info(f"🔄 Heartbeat resumed for stale client {client_id} - re-spawning containers")
+                    respawn_total.labels(client_id=client_id).inc()
+                    self._spawn_all_for_client(client_id, self.registered_clients[client_id])
 
         except Exception as e:
             logger.error(f"Error processing heartbeat message: {e}", exc_info=True)
 
     def _check_stale_clients(self):
-        """Check for clients with no heartbeat for 2 minutes"""
+        """Check for clients with no heartbeat for 2 minutes (thread-safe)"""
         stale_threshold = datetime.utcnow() - timedelta(minutes=2)
 
-        stale_clients = []
-        for client_id, last_hb in self.last_heartbeat.items():
-            if last_hb < stale_threshold:
-                stale_clients.append(client_id)
+        with self.state_lock:
+            stale_clients = []
+            for client_id, last_hb in self.last_heartbeat.items():
+                if last_hb < stale_threshold:
+                    stale_clients.append(client_id)
 
+        # Cleanup outside the lock to avoid long hold times
         for client_id in stale_clients:
             logger.warning(f"⚠️  Client {client_id} is stale (no heartbeat for 2+ min)")
+            stale_client_total.labels(client_id=client_id).inc()
             self._cleanup_client(client_id)
 
     def _monitor_registry(self):
@@ -377,14 +528,26 @@ class ControlPlaneManagerV2:
 
     def run(self):
         """Start control plane manager"""
-        logger.info("🚀 Control Plane Manager V2 starting...")
+        logger.info("🚀 Control Plane Manager V2 (Hardened) starting...")
         logger.info("")
         logger.info("📋 Responsibilities:")
         logger.info("   1. Monitor cluster.registry for new clients")
         logger.info("   2. Monitor cluster.heartbeat for client health")
         logger.info("   3. Spawn per-client containers (normalizers, graph builders)")
         logger.info("   4. Clean up stale clients (no heartbeat for 2+ min)")
+        logger.info("   5. Prevent thrashing with quarantine period")
+        logger.info("   6. Adopt existing containers on restart")
         logger.info("")
+
+        # Start Prometheus metrics server
+        try:
+            start_http_server(9090)
+            logger.info("📊 Prometheus metrics server started on :9090")
+        except Exception as e:
+            logger.warning(f"Failed to start metrics server: {e}")
+
+        # Adopt existing containers before starting monitoring
+        self._adopt_existing_containers()
 
         # Start background threads
         registry_thread = threading.Thread(target=self._monitor_registry, daemon=True)
@@ -402,14 +565,21 @@ class ControlPlaneManagerV2:
         logger.info(f"   Active containers: {sum(len(c) for c in self.spawned_containers.values())}")
         logger.info("")
 
+        # Update initial metrics
+        clients_registered.set(len(self.registered_clients))
+        containers_spawned.set(sum(len(c) for c in self.spawned_containers.values()))
+
         # Keep main thread alive
         try:
             while True:
                 time.sleep(60)
 
                 # Periodic status report
-                logger.info(f"📊 Status: {len(self.registered_clients)} clients, "
-                            f"{sum(len(c) for c in self.spawned_containers.values())} containers")
+                with self.state_lock:
+                    client_count = len(self.registered_clients)
+                    container_count = sum(len(c) for c in self.spawned_containers.values())
+
+                logger.info(f"📊 Status: {client_count} clients, {container_count} containers")
 
         except KeyboardInterrupt:
             logger.info("🛑 Shutting down Control Plane Manager...")
