@@ -70,11 +70,14 @@ class ControlPlaneManagerV2:
 
         # Safe JSON deserializer that handles malformed messages
         def safe_json_deserializer(m):
-            if not m:
+            # Handle None or empty bytes
+            if m is None or len(m) == 0:
                 return None
+
             try:
                 decoded = m.decode('utf-8').strip()
-                if not decoded:
+                # Handle empty string after decoding
+                if not decoded or decoded == '':
                     return None
 
                 # Try standard JSON parsing first
@@ -267,27 +270,22 @@ class ControlPlaneManagerV2:
     def _process_registry_message(self, message):
         """Process client registration"""
         try:
-            # Skip tombstone messages (None values)
+            # Skip tombstone messages (None values) - deserializer returns None for empty/invalid messages
             if message.value is None:
-                logger.debug("Skipping tombstone message in cluster.registry")
+                logger.debug("Skipping invalid/empty message in cluster.registry")
                 return
 
-            # Debug: Check message type
-            logger.debug(f"Registry message type: {type(message.value)}, value: {message.value}")
+            # Deserializer already parsed JSON, so message.value should be a dict
+            message_data = message.value
 
-            # If message.value is a string, parse it as JSON
-            if isinstance(message.value, str):
-                # Skip empty strings
-                if not message.value.strip():
-                    logger.debug("Skipping empty string message in cluster.registry")
-                    return
+            # If for some reason it's still a string, try to parse it
+            if isinstance(message_data, str):
+                logger.warning(f"Unexpected string message in registry (deserializer should have parsed it): {message_data[:100]}")
                 try:
-                    message_data = json.loads(message.value)
+                    message_data = json.loads(message_data)
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse registry message as JSON: {e}")
                     return
-            else:
-                message_data = message.value
 
             client_id = message_data.get('client_id')
             if not client_id:
