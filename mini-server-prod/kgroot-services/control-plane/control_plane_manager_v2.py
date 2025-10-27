@@ -269,7 +269,20 @@ class ControlPlaneManagerV2:
                 logger.debug("Skipping tombstone message in cluster.registry")
                 return
 
-            client_id = message.value.get('client_id')
+            # Debug: Check message type
+            logger.debug(f"Registry message type: {type(message.value)}, value: {message.value}")
+
+            # If message.value is a string, parse it as JSON
+            if isinstance(message.value, str):
+                try:
+                    message_data = json.loads(message.value)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse registry message as JSON: {e}")
+                    return
+            else:
+                message_data = message.value
+
+            client_id = message_data.get('client_id')
             if not client_id:
                 logger.warning("⚠️  Registry message missing client_id")
                 return
@@ -277,14 +290,14 @@ class ControlPlaneManagerV2:
             # Check if this is a new client
             if client_id not in self.registered_clients:
                 logger.info(f"📋 New client registered: {client_id}")
-                self.registered_clients[client_id] = message.value
+                self.registered_clients[client_id] = message_data
                 self.last_heartbeat[client_id] = datetime.utcnow()
 
                 # Spawn containers for this client
-                self._spawn_all_for_client(client_id, message.value)
+                self._spawn_all_for_client(client_id, message_data)
             else:
                 # Update registration data
-                self.registered_clients[client_id] = message.value
+                self.registered_clients[client_id] = message_data
 
         except Exception as e:
             logger.error(f"Error processing registry message: {e}", exc_info=True)
