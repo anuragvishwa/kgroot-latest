@@ -277,6 +277,10 @@ class ControlPlaneManagerV2:
 
             # If message.value is a string, parse it as JSON
             if isinstance(message.value, str):
+                # Skip empty strings
+                if not message.value.strip():
+                    logger.debug("Skipping empty string message in cluster.registry")
+                    return
                 try:
                     message_data = json.loads(message.value)
                 except json.JSONDecodeError as e:
