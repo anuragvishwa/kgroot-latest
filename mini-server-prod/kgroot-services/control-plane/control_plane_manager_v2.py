@@ -258,8 +258,11 @@ class ControlPlaneManagerV2:
                 logger.error(f"   ❌ Failed to remove container {container_id}: {e}")
 
         del self.spawned_containers[client_id]
-        del self.last_heartbeat[client_id]
-        logger.info(f"✅ Cleanup complete for client {client_id}")
+        # NOTE: We keep registered_clients[client_id] so we can re-spawn if heartbeat resumes
+        # Only delete last_heartbeat to mark as stale
+        if client_id in self.last_heartbeat:
+            del self.last_heartbeat[client_id]
+        logger.info(f"✅ Cleanup complete for client {client_id} (registration preserved for auto-respawn)")
 
     def _process_registry_message(self, message):
         """Process client registration"""
@@ -316,6 +319,12 @@ class ControlPlaneManagerV2:
 
             # Update last heartbeat time
             self.last_heartbeat[client_id] = datetime.utcnow()
+
+            # AUTO-RESPAWN: If client was previously stale and containers were killed,
+            # but heartbeat resumed, re-spawn containers automatically
+            if client_id in self.registered_clients and client_id not in self.spawned_containers:
+                logger.info(f"🔄 Heartbeat resumed for stale client {client_id} - re-spawning containers")
+                self._spawn_all_for_client(client_id, self.registered_clients[client_id])
 
         except Exception as e:
             logger.error(f"Error processing heartbeat message: {e}", exc_info=True)
