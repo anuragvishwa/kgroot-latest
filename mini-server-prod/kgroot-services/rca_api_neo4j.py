@@ -165,6 +165,8 @@ async def query_neo4j_for_rca(
         """
 
         logger.info(f"🔍 Querying Neo4j (client={client_id}, window={time_window_minutes}m, ns={namespace or 'ALL'})")
+        logger.info(f"   Query filters: {where_clause}")
+        logger.info(f"   Cutoff time: {cutoff_str}")
 
         events = []
         causes_map = {}
@@ -280,8 +282,8 @@ async def analyze_rca(request: RCARequest):
         # Build response
         response = RCAResponse(
             incident_id=fault_id,
-            primary_symptom=f"{result.top_root_causes[0].service} · {result.top_root_causes[0].event_type.value}" if result.top_root_causes else "Unknown",
-            confidence_score=result.top_root_causes[0].root_cause_confidence * 100 if result.top_root_causes else 0,
+            primary_symptom=f"{result.top_root_causes[0]['service']} · {result.top_root_causes[0]['event_type']}" if result.top_root_causes else "Unknown",
+            confidence_score=float(result.top_root_causes[0]['confidence'].rstrip('%')) if result.top_root_causes else 0,
             sla_status="within_slo",
             sla_percentage=99.9,
             risk_budget_remaining=10,
@@ -292,10 +294,10 @@ async def analyze_rca(request: RCARequest):
                 "severity": e.severity.value
             } for e in context['events'][:20]],
             root_causes=[{
-                "service": rc.service,
-                "event_type": rc.details.get('reason', 'Unknown'),
-                "confidence": rc.root_cause_confidence,
-                "message": rc.message
+                "service": rc['service'],
+                "event_type": rc['event_type'],
+                "confidence": float(rc['confidence'].rstrip('%')),
+                "message": rc['explanation']
             } for rc in result.top_root_causes[:5]],
             llm_analysis=result.llm_analysis if request.include_llm_analysis else None
         )
