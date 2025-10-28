@@ -52,10 +52,10 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-28T16:54:45.82334+05:30"
+    created: "2025-10-28T12:56:04.544196103Z"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
-    digest: ce1f2804dff06a8bf648b34552169de2d33249903a146e708ac323efa4560f12
+    digest: c827e7f23dafddbd7a20ba71323cd799ff0981144dd707c7da6b0c132dedbd02
     home: https://github.com/anuragvishwa/kgroot-latest
     icon: https://raw.githubusercontent.com/anuragvishwa/kgroot-latest/main/assets/logo.png
     keywords:
@@ -124,7 +124,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-28T16:54:45.821876+05:30"
+    created: "2025-10-28T12:56:04.542781439Z"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
@@ -196,7 +196,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-28T16:54:45.825407+05:30"
+    created: "2025-10-28T12:56:04.546984246Z"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
@@ -268,7 +268,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-28T16:54:45.824385+05:30"
+    created: "2025-10-28T12:56:04.545501184Z"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 76301c37bc4d6218f94eacb655e512a8c06d169a2163df6148e15bd4188cc2be
@@ -295,4 +295,4 @@ entries:
     urls:
     - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-2.1.0.tgz
     version: 2.1.0
-generated: "2025-10-28T16:54:45.819308+05:30"
+generated: "2025-10-28T12:56:04.541260366Z"
