@@ -1,0 +1,220 @@
+apiVersion: v1
+entries:
+  kg-rca-agent:
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: fixed
+          description: Fixed values.yaml structure - moved kafka config back under client
+        - kind: added
+          description: Control plane architecture with dynamic consumer spawning
+        - kind: added
+          description: Cluster registration via cluster.registry Kafka topic
+        - kind: added
+          description: Heartbeat monitoring via cluster.heartbeat Kafka topic
+        - kind: added
+          description: Auto-cleanup of dead clusters after 5 minutes no heartbeat
+        - kind: changed
+          description: Zero-touch operations - helm install auto-spawns graph-builder, helm delete auto-cleans up
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/displayName: KG RCA Agent by Lumniverse
+      artifacthub.io/images: |
+        - name: alert-receiver
+          image: anuragvishwa/kg-alert-receiver:1.0.18
+        - name: state-watcher
+          image: anuragvishwa/kg-state-watcher:1.0.2
+        - name: event-exporter
+          image: opsgenie/kubernetes-event-exporter:v1.4
+        - name: vector
+          image: timberio/vector:0.34.0-alpine
+        - name: prometheus
+          image: prom/prometheus:latest
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://github.com/anuragvishwa/kgroot-latest/blob/main/README.md
+        - name: Support
+          url: https://github.com/anuragvishwa/kgroot-latest/issues
+        - name: Website
+          url: https://lumniverse.com
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/recommendations: |
+        - url: https://kafka.apache.org/
+      artifacthub.io/signKey: |
+        fingerprint: # Add GPG key fingerprint if signing releases
+        url: # Add GPG public key URL if signing releases
+    apiVersion: v2
+    appVersion: 2.1.0
+    created: "2025-10-28T13:30:46.44633+05:30"
+    description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
+      observability and root cause analysis
+    digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
+    home: https://github.com/anuragvishwa/kgroot-latest
+    icon: https://raw.githubusercontent.com/anuragvishwa/kgroot-latest/main/assets/logo.png
+    keywords:
+    - knowledge-graph
+    - rca
+    - observability
+    - agent
+    - monitoring
+    - kubernetes
+    - troubleshooting
+    - root-cause-analysis
+    - lumniverse
+    maintainers:
+    - email: support@lumniverse.com
+      name: Lumniverse
+      url: https://github.com/anuragvishwa
+    name: kg-rca-agent
+    sources:
+    - https://github.com/anuragvishwa/kgroot-latest
+    type: application
+    urls:
+    - https://anuragvishwa.github.io/kgroot-latest/kg-rca-agent-2.1.1.tgz
+    version: 2.1.1
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: fixed
+          description: Fixed values.yaml structure - moved kafka config back under client
+        - kind: added
+          description: Control plane architecture with dynamic consumer spawning
+        - kind: added
+          description: Cluster registration via cluster.registry Kafka topic
+        - kind: added
+          description: Heartbeat monitoring via cluster.heartbeat Kafka topic
+        - kind: added
+          description: Auto-cleanup of dead clusters after 5 minutes no heartbeat
+        - kind: changed
+          description: Zero-touch operations - helm install auto-spawns graph-builder, helm delete auto-cleans up
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/displayName: KG RCA Agent by Lumniverse
+      artifacthub.io/images: |
+        - name: alert-receiver
+          image: anuragvishwa/kg-alert-receiver:1.0.18
+        - name: state-watcher
+          image: anuragvishwa/kg-state-watcher:1.0.2
+        - name: event-exporter
+          image: opsgenie/kubernetes-event-exporter:v1.4
+        - name: vector
+          image: timberio/vector:0.34.0-alpine
+        - name: prometheus
+          image: prom/prometheus:latest
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://github.com/anuragvishwa/kgroot-latest/blob/main/README.md
+        - name: Support
+          url: https://github.com/anuragvishwa/kgroot-latest/issues
+        - name: Website
+          url: https://lumniverse.com
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/recommendations: |
+        - url: https://kafka.apache.org/
+      artifacthub.io/signKey: |
+        fingerprint: # Add GPG key fingerprint if signing releases
+        url: # Add GPG public key URL if signing releases
+    apiVersion: v2
+    appVersion: 2.1.0
+    created: "2025-10-28T13:30:46.44833+05:30"
+    description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
+      observability and root cause analysis
+    digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
+    home: https://github.com/anuragvishwa/kgroot-latest
+    icon: https://raw.githubusercontent.com/anuragvishwa/kgroot-latest/main/assets/logo.png
+    keywords:
+    - knowledge-graph
+    - rca
+    - observability
+    - agent
+    - monitoring
+    - kubernetes
+    - troubleshooting
+    - root-cause-analysis
+    - lumniverse
+    maintainers:
+    - email: support@lumniverse.com
+      name: Lumniverse
+      url: https://github.com/anuragvishwa
+    name: kg-rca-agent
+    sources:
+    - https://github.com/anuragvishwa/kgroot-latest
+    type: application
+    urls:
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-2.1.1.tgz
+    version: 2.1.1
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: fixed
+          description: Fixed values.yaml structure - moved kafka config back under client
+        - kind: added
+          description: Control plane architecture with dynamic consumer spawning
+        - kind: added
+          description: Cluster registration via cluster.registry Kafka topic
+        - kind: added
+          description: Heartbeat monitoring via cluster.heartbeat Kafka topic
+        - kind: added
+          description: Auto-cleanup of dead clusters after 5 minutes no heartbeat
+        - kind: changed
+          description: Zero-touch operations - helm install auto-spawns graph-builder, helm delete auto-cleans up
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/displayName: KG RCA Agent by Lumniverse
+      artifacthub.io/images: |
+        - name: alert-receiver
+          image: anuragvishwa/kg-alert-receiver:1.0.18
+        - name: state-watcher
+          image: anuragvishwa/kg-state-watcher:1.0.2
+        - name: event-exporter
+          image: opsgenie/kubernetes-event-exporter:v1.4
+        - name: vector
+          image: timberio/vector:0.34.0-alpine
+        - name: prometheus
+          image: prom/prometheus:latest
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://github.com/anuragvishwa/kgroot-latest/blob/main/README.md
+        - name: Support
+          url: https://github.com/anuragvishwa/kgroot-latest/issues
+        - name: Website
+          url: https://lumniverse.com
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/recommendations: |
+        - url: https://kafka.apache.org/
+      artifacthub.io/signKey: |
+        fingerprint: # Add GPG key fingerprint if signing releases
+        url: # Add GPG public key URL if signing releases
+    apiVersion: v2
+    appVersion: 2.1.0
+    created: "2025-10-28T13:30:46.44733+05:30"
+    description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
+      observability and root cause analysis
+    digest: 76301c37bc4d6218f94eacb655e512a8c06d169a2163df6148e15bd4188cc2be
+    home: https://github.com/anuragvishwa/kgroot-latest
+    icon: https://raw.githubusercontent.com/anuragvishwa/kgroot-latest/main/assets/logo.png
+    keywords:
+    - knowledge-graph
+    - rca
+    - observability
+    - agent
+    - monitoring
+    - kubernetes
+    - troubleshooting
+    - root-cause-analysis
+    - lumniverse
+    maintainers:
+    - email: support@lumniverse.com
+      name: Lumniverse
+      url: https://github.com/anuragvishwa
+    name: kg-rca-agent
+    sources:
+    - https://github.com/anuragvishwa/kgroot-latest
+    type: application
+    urls:
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-2.1.0.tgz
+    version: 2.1.0
+generated: "2025-10-28T13:30:46.445061+05:30"
