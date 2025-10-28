@@ -32,6 +32,7 @@ prometheus-client==0.19.0
 # Kafka
 kafka-python==2.0.2
 lz4==4.3.2
+zstandard==0.22.0  # zstd compression codec
 
 # Docker SDK (for control plane)
 docker==7.0.0
