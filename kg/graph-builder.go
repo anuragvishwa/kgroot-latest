@@ -28,6 +28,7 @@ import (
 type ResourceRecord struct {
 	Op        string            `json:"op"`
 	At        time.Time         `json:"at"`
+	ClientID  string            `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Cluster   string            `json:"cluster"`
 	Kind      string            `json:"kind"`
 	UID       string            `json:"uid"`
@@ -46,19 +47,21 @@ type OwnerRef struct{ Kind, Name string }
 
 // state.k8s.topology
 type EdgeRecord struct {
-	Op      string    `json:"op"`
-	At      time.Time `json:"at"`
-	Cluster string    `json:"cluster"`
-	ID      string    `json:"id"`
-	From    string    `json:"from"`
-	To      string    `json:"to"`
-	Type    string    `json:"type"` // SELECTS | RUNS_ON | CONTROLS | ...
+	Op       string    `json:"op"`
+	At       time.Time `json:"at"`
+	ClientID string    `json:"client_id,omitempty"` // Multi-tenant: client identifier
+	Cluster  string    `json:"cluster"`
+	ID       string    `json:"id"`
+	From     string    `json:"from"`
+	To       string    `json:"to"`
+	Type     string    `json:"type"` // SELECTS | RUNS_ON | CONTROLS | ...
 }
 
 // events.normalized
 type EventNormalized struct {
 	EventID   string       `json:"event_id"`
 	EventTime string       `json:"event_time"`
+	ClientID  string       `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Etype     string       `json:"etype"`
 	Severity  string       `json:"severity"`
 	Reason    string       `json:"reason"`
@@ -77,10 +80,11 @@ type EventSubject struct {
 type LogNormalized struct {
 	EventID   string       `json:"event_id"`
 	EventTime string       `json:"event_time"`
-	Etype     string       `json:"etype"`   // "k8s.log"
-	Severity  string       `json:"severity"`// INFO/WARNING/ERROR/FATAL
-	Message   string       `json:"message"` // normalized text
-	Subject   EventSubject `json:"subject"` // kind=Pod, ns/name (uid often empty)
+	ClientID  string       `json:"client_id,omitempty"` // Multi-tenant: client identifier
+	Etype     string       `json:"etype"`               // "k8s.log"
+	Severity  string       `json:"severity"`            // INFO/WARNING/ERROR/FATAL
+	Message   string       `json:"message"`             // normalized text
+	Subject   EventSubject `json:"subject"`             // kind=Pod, ns/name (uid often empty)
 	// helpful fallbacks:
 	PodUID string `json:"pod_uid,omitempty"`
 	PodNS  string `json:"pod_namespace,omitempty"`
@@ -95,6 +99,7 @@ type LogNormalized struct {
 type PromTargetRecord struct {
 	Op         string            `json:"op"` // UPSERT/DELETE (tombstone = Value=nil)
 	At         time.Time         `json:"at"`
+	ClientID   string            `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Cluster    string            `json:"cluster"`
 	Labels     map[string]string `json:"labels"`
 	ScrapeURL  string            `json:"scrapeUrl"`
@@ -107,6 +112,7 @@ type PromTargetRecord struct {
 type RuleRecord struct {
 	Op          string            `json:"op"`
 	At          time.Time         `json:"at"`
+	ClientID    string            `json:"client_id,omitempty"` // Multi-tenant: client identifier
 	Cluster     string            `json:"cluster"`
 	Group       string            `json:"group"`
 	Rule        string            `json:"rule"`
@@ -192,6 +198,21 @@ func isConstraintErr(err error) bool {
 	}
 	return false
 }
+
+func splitTenantKey(key string) (tenant, raw string) {
+    // Support both historic "tenant|raw" and newer "tenant::raw" formats
+    if strings.Contains(key, "::") {
+        parts := strings.SplitN(key, "::", 2)
+        if len(parts) == 2 && parts[0] != "" {
+            return parts[0], parts[1]
+        }
+    }
+    parts := strings.SplitN(key, "|", 2)
+    if len(parts) == 2 && parts[0] != "" {
+        return parts[0], parts[1]
+    }
+    return "", key
+}
 func writeWithRetry(ctx context.Context, s neo4j.SessionWithContext, fn func(tx neo4j.ManagedTransaction) error) error {
 	var last error
 	for i := 0; i < 3; i++ {
@@ -257,6 +278,13 @@ func (g *Graph) EnsureSchema(ctx context.Context) error {
 
 		// ENHANCED: Incident clustering support
 		`CREATE INDEX inc_resource IF NOT EXISTS FOR (i:Incident) ON (i.resource_id, i.window_start)`,
+
+		// MULTI-TENANT: Index for client_id filtering
+		`CREATE INDEX res_client_id IF NOT EXISTS FOR (r:Resource) ON (r.client_id)`,
+		`CREATE INDEX epi_client_id IF NOT EXISTS FOR (e:Episodic) ON (e.client_id)`,
+		`CREATE INDEX rule_client_id IF NOT EXISTS FOR (r:Rule) ON (r.client_id)`,
+		`CREATE INDEX tgt_client_id IF NOT EXISTS FOR (t:PromTarget) ON (t.client_id)`,
+		`CREATE INDEX inc_client_id IF NOT EXISTS FOR (i:Incident) ON (i.client_id)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
@@ -282,7 +310,9 @@ func ridFor(kind, uid, ns, name string) string {
 func ridFromString(id string) string { return strings.ToLower(id) }
 
 func ifEmpty(s, def string) string {
-	if strings.TrimSpace(s) == "" { return def }
+	if strings.TrimSpace(s) == "" {
+		return def
+	}
 	return s
 }
 
@@ -311,49 +341,49 @@ func parseRid(rid string) (kind, ns, name, uid string) {
 	return
 }
 
-
 func (g *Graph) UpsertResource(ctx context.Context, rec ResourceRecord) error {
-    s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
-    defer s.Close(ctx)
-    rid := ridFor(rec.Kind, rec.UID, rec.Namespace, rec.Name) // your original order if needed
+	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+	defer s.Close(ctx)
+	rid := ridFor(rec.Kind, rec.UID, rec.Namespace, rec.Name) // your original order if needed
 
-    props := map[string]any{
-        "rid":         rid,
-        "kind":        rec.Kind,
-        "uid":         rec.UID,
-        "ns":          rec.Namespace,
-        "name":        rec.Name,
-        "cluster":     rec.Cluster,
-        "labels_kv":   labelsToKV(rec.Labels),
-        "labels_json": toJSON(rec.Labels),
-        "status_json": toJSON(rec.Status),
-        "spec_json":   toJSON(rec.Spec),
-        "node":        rec.Node,
-        "podIP":       rec.PodIP,
-        "image":       rec.Image,
-        "at":          rec.At.UTC().Format(time.RFC3339Nano),
-    }
+	props := map[string]any{
+		"rid":         rid,
+		"kind":        rec.Kind,
+		"uid":         rec.UID,
+		"ns":          rec.Namespace,
+		"name":        rec.Name,
+		"cluster":     rec.Cluster,
+		"client_id":   rec.ClientID, // Multi-tenant: store client_id
+		"labels_kv":   labelsToKV(rec.Labels),
+		"labels_json": toJSON(rec.Labels),
+		"status_json": toJSON(rec.Status),
+		"spec_json":   toJSON(rec.Spec),
+		"node":        rec.Node,
+		"podIP":       rec.PodIP,
+		"image":       rec.Image,
+		"at":          rec.At.UTC().Format(time.RFC3339Nano),
+	}
 
-    kindLabel := safeLabelName(ifEmpty(rec.Kind, "Unknown"))
+	kindLabel := safeLabelName(ifEmpty(rec.Kind, "Unknown"))
 
-    // 👇 keep only this one
-    cy := fmt.Sprintf(`
-MERGE (r:Resource:%s {rid:$rid})
+	// Multi-tenant: Include client_id in node properties
+	cy := fmt.Sprintf(`
+MERGE (r:Resource:%s {rid:$rid, client_id:$client_id})
 SET r.kind=$kind, r.uid=$uid, r.ns=$ns, r.name=$name, r.cluster=$cluster,
+    r.client_id=$client_id,
     r.labels_kv=$labels_kv, r.labels_json=$labels_json,
     r.status_json=$status_json, r.spec_json=$spec_json,
     r.node=$node, r.podIP=$podIP, r.image=$image,
     r.updated_at = datetime($at)
 `, kindLabel)
 
-    return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
-        _, err := tx.Run(ctx, cy, props)
-        return err
-    })
+	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
+		_, err := tx.Run(ctx, cy, props)
+		return err
+	})
 }
 
-
-func (g *Graph) DeleteResourceByKey(ctx context.Context, key string) error {
+func (g *Graph) DeleteResourceByKey(ctx context.Context, key, clientID string) error {
 	m := ridKeyRe.FindStringSubmatch(key)
 	var rid string
 	if len(m) == 3 {
@@ -364,7 +394,14 @@ func (g *Graph) DeleteResourceByKey(ctx context.Context, key string) error {
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
-		_, err := tx.Run(ctx, `MATCH (r:Resource {rid:$rid}) DETACH DELETE r`, map[string]any{"rid": rid})
+		query := `MATCH (r:Resource {rid:$rid})`
+		params := map[string]any{"rid": rid}
+		if clientID != "" {
+			query = `MATCH (r:Resource {rid:$rid, client_id:$client_id})`
+			params["client_id"] = clientID
+		}
+		query += ` DETACH DELETE r`
+		_, err := tx.Run(ctx, query, params)
 		return err
 	})
 }
@@ -374,35 +411,36 @@ func (g *Graph) UpsertEdge(ctx context.Context, rec EdgeRecord) error {
 	defer s.Close(ctx)
 
 	fromRid := ridFromString(rec.From)
-	toRid   := ridFromString(rec.To)
+	toRid := ridFromString(rec.To)
 	relType := safeRelTypeName(rec.Type)
 
 	fk, fns, fname, fuid := parseRid(fromRid)
 	tk, tns, tname, tuid := parseRid(toRid)
 
 	cy := fmt.Sprintf(`
-MERGE (a:Resource {rid:$from})
+MERGE (a:Resource {rid:$from, client_id:$client_id})
 SET  a.kind = coalesce(a.kind, $fromKind),
      a.ns   = coalesce(a.ns,   $fromNS),
      a.name = coalesce(a.name, $fromName),
      a.uid  = coalesce(a.uid,  $fromUID)
-MERGE (b:Resource {rid:$to})
+MERGE (b:Resource {rid:$to, client_id:$client_id})
 SET  b.kind = coalesce(b.kind, $toKind),
      b.ns   = coalesce(b.ns,   $toNS),
      b.name = coalesce(b.name, $toName),
      b.uid  = coalesce(b.uid,  $toUID)
-MERGE (a)-[r:%s {id:$id}]->(b)
-SET  r.cluster=$cluster, r.updated_at=datetime($at)
+MERGE (a)-[r:%s {id:$id, client_id:$client_id}]->(b)
+SET  r.cluster=$cluster, r.client_id=$client_id, r.updated_at=datetime($at)
 `, relType)
 
 	params := map[string]any{
-		"from":     fromRid,
-		"to":       toRid,
-		"id":       rec.ID,
-		"cluster":  rec.Cluster,
-		"at":       rec.At.UTC().Format(time.RFC3339Nano),
-		"fromKind": fk, "fromNS": fns, "fromName": fname, "fromUID": fuid,
-		"toKind":   tk, "toNS":   tns, "toName":   tname, "toUID":   tuid,
+		"from":      fromRid,
+		"to":        toRid,
+		"id":        rec.ID,
+		"client_id": rec.ClientID,
+		"cluster":   rec.Cluster,
+		"at":        rec.At.UTC().Format(time.RFC3339Nano),
+		"fromKind":  fk, "fromNS": fns, "fromName": fname, "fromUID": fuid,
+		"toKind": tk, "toNS": tns, "toName": tname, "toUID": tuid,
 	}
 
 	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
@@ -411,12 +449,18 @@ SET  r.cluster=$cluster, r.updated_at=datetime($at)
 	})
 }
 
-
-func (g *Graph) DeleteEdgeByID(ctx context.Context, id string) error {
+func (g *Graph) DeleteEdgeByID(ctx context.Context, id, clientID string) error {
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
-		_, err := tx.Run(ctx, `MATCH ()-[r]->() WHERE r.id=$id DELETE r`, map[string]any{"id": id})
+		query := `MATCH ()-[r]->() WHERE r.id=$id`
+		params := map[string]any{"id": id}
+		if clientID != "" {
+			query += ` AND r.client_id=$client_id`
+			params["client_id"] = clientID
+		}
+		query += ` DELETE r`
+		_, err := tx.Run(ctx, query, params)
 		return err
 	})
 }
@@ -437,6 +481,7 @@ func (g *Graph) UpsertEpisodeAndLink(ctx context.Context, ev EventNormalized) er
 
 	params := map[string]any{
 		"eid":       ev.EventID,
+		"client_id": ev.ClientID,
 		"etype":     ev.Etype,
 		"severity":  strings.ToUpper(ev.Severity),
 		"reason":    ev.Reason,
@@ -452,17 +497,18 @@ func (g *Graph) UpsertEpisodeAndLink(ctx context.Context, ev EventNormalized) er
 	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
 		// Upsert episodic + subject, coalescing subject props
 		_, err := tx.Run(ctx, `
-MERGE (e:Episodic {eid:$eid})
-SET  e.etype=$etype, e.severity=$severity, e.reason=$reason, e.message=$message,
+MERGE (e:Episodic {eid:$eid, client_id:$client_id})
+SET  e.client_id=$client_id, e.etype=$etype, e.severity=$severity, e.reason=$reason, e.message=$message,
      e.event_time=datetime($eventTime), e.updated_at=datetime($eventTime)
-MERGE (s:Resource {rid:$subRid})
+MERGE (s:Resource {rid:$subRid, client_id:$client_id})
   ON CREATE SET s.kind=$subKind, s.ns=$subNS, s.name=$subName, s.uid=$subUID
 SET  s.kind = coalesce(s.kind, $subKind),
      s.ns   = coalesce(s.ns,   $subNS),
      s.name = coalesce(s.name, $subName),
      s.uid  = coalesce(s.uid,  $subUID),
      s.updated_at = datetime($eventTime)
-MERGE (e)-[:ABOUT]->(s)
+MERGE (e)-[rel:ABOUT {client_id:$client_id}]->(s)
+ON CREATE SET rel.client_id=$client_id
 `, params)
 		if err != nil {
 			return err
@@ -471,30 +517,29 @@ MERGE (e)-[:ABOUT]->(s)
 		// Add subtype label once we know the kind (requires APOC)
 		if subKind != "" {
 			_, _ = tx.Run(ctx, `
-MATCH (s:Resource {rid:$rid})
+MATCH (s:Resource {rid:$rid, client_id:$client_id})
 CALL apoc.create.addLabels(s, [$label]) YIELD node
 RETURN 0
-`, map[string]any{"rid": subRid, "label": safeLabelName(subKind)})
+`, map[string]any{"rid": subRid, "client_id": ev.ClientID, "label": safeLabelName(subKind)})
 		}
 		return nil
 	})
 }
 
-
-func (g *Graph) LinkRCA(ctx context.Context, eid string, windowMin int) error {
+func (g *Graph) LinkRCA(ctx context.Context, eid, clientID string, windowMin int) error {
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
-	params := map[string]any{"eid": eid, "mins": windowMin}
+	params := map[string]any{"eid": eid, "client_id": clientID, "mins": windowMin}
 	cy := `
-MATCH (e:Episodic {eid:$eid})-[:ABOUT]->(r:Resource)
+MATCH (e:Episodic {eid:$eid, client_id:$client_id})-[:ABOUT]->(r:Resource {client_id:$client_id})
 WITH e, r
-MATCH (c:Episodic)-[:ABOUT]->(u:Resource)
+MATCH (c:Episodic {client_id:$client_id})-[:ABOUT]->(u:Resource {client_id:$client_id})
 WHERE c.event_time <= e.event_time
   AND c.event_time >= e.event_time - duration({minutes:$mins})
   AND u <> r
 OPTIONAL MATCH p = shortestPath( (u)-[:SELECTS|RUNS_ON|CONTROLS*1..3]-(r) )
 WITH e, c, p WHERE p IS NOT NULL
-MERGE (c)-[pc:POTENTIAL_CAUSE]->(e)
+MERGE (c)-[pc:POTENTIAL_CAUSE {client_id:$client_id}]->(e)
 ON CREATE SET pc.hops = length(p), pc.created_at = datetime()`
 	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
 		_, err := tx.Run(ctx, cy, params)
@@ -513,6 +558,7 @@ func (g *Graph) UpsertPromTarget(ctx context.Context, key string, rec PromTarget
 	}
 	props := map[string]any{
 		"tid":         tid,
+		"client_id":   rec.ClientID,
 		"cluster":     rec.Cluster,
 		"labels_kv":   labelsToKV(rec.Labels),
 		"labels_json": toJSON(rec.Labels),
@@ -523,8 +569,8 @@ func (g *Graph) UpsertPromTarget(ctx context.Context, key string, rec PromTarget
 		"at":          rec.At.UTC().Format(time.RFC3339Nano),
 	}
 	cy := `
-MERGE (t:PromTarget {tid:$tid})
-SET t.cluster=$cluster, t.labels_kv=$labels_kv, t.labels_json=$labels_json,
+MERGE (t:PromTarget {tid:$tid, client_id:$client_id})
+SET t.client_id=$client_id, t.cluster=$cluster, t.labels_kv=$labels_kv, t.labels_json=$labels_json,
     t.scrapeUrl=$scrape, t.health=$health,
     t.lastScrape=$lastScrape, t.lastError=$lastError, t.updated_at=datetime($at)`
 	if err := writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
@@ -544,16 +590,17 @@ SET t.cluster=$cluster, t.labels_kv=$labels_kv, t.labels_json=$labels_json,
 	}
 
 	linkCy := `
-MATCH (t:PromTarget {tid:$tid})
+MATCH (t:PromTarget {tid:$tid, client_id:$client_id})
 WITH t
-MATCH (s:Resource {rid:$svcRid})
+MATCH (s:Resource {rid:$svcRid, client_id:$client_id})
 MERGE (t)-[:SCRAPES]->(s)`
 
 	if ns != "" && svc != "" {
 		_ = writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
 			_, err := tx.Run(ctx, linkCy, map[string]any{
-				"tid":    tid,
-				"svcRid": fmt.Sprintf("service:%s:%s", ns, svc),
+				"tid":       tid,
+				"client_id": rec.ClientID,
+				"svcRid":    fmt.Sprintf("service:%s:%s", ns, svc),
 			})
 			return err
 		})
@@ -561,8 +608,9 @@ MERGE (t)-[:SCRAPES]->(s)`
 	if ns != "" && pod != "" {
 		_ = writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
 			_, err := tx.Run(ctx, linkCy, map[string]any{
-				"tid":    tid,
-				"svcRid": fmt.Sprintf("pod:%s:%s", ns, pod),
+				"tid":       tid,
+				"client_id": rec.ClientID,
+				"svcRid":    fmt.Sprintf("pod:%s:%s", ns, pod),
 			})
 			return err
 		})
@@ -570,14 +618,21 @@ MERGE (t)-[:SCRAPES]->(s)`
 	return nil
 }
 
-func (g *Graph) DeletePromTargetByKey(ctx context.Context, key string) error {
+func (g *Graph) DeletePromTargetByKey(ctx context.Context, key, clientID string) error {
 	if key == "" {
 		return nil
 	}
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
-		_, err := tx.Run(ctx, `MATCH (t:PromTarget {tid:$tid}) DETACH DELETE t`, map[string]any{"tid": key})
+		query := `MATCH (t:PromTarget {tid:$tid})`
+		params := map[string]any{"tid": key}
+		if clientID != "" {
+			query = `MATCH (t:PromTarget {tid:$tid, client_id:$client_id})`
+			params["client_id"] = clientID
+		}
+		query += ` DETACH DELETE t`
+		_, err := tx.Run(ctx, query, params)
 		return err
 	})
 }
@@ -591,6 +646,7 @@ func (g *Graph) UpsertRule(ctx context.Context, key string, rec RuleRecord) erro
 	}
 	params := map[string]any{
 		"rkey":        rkey,
+		"client_id":   rec.ClientID,
 		"name":        rec.Rule,
 		"group":       rec.Group,
 		"rtype":       strings.ToLower(rec.Type),
@@ -601,8 +657,8 @@ func (g *Graph) UpsertRule(ctx context.Context, key string, rec RuleRecord) erro
 		"at":          rec.At.UTC().Format(time.RFC3339Nano),
 	}
 	cy := `
-MERGE (r:Rule {rkey:$rkey})
-SET r.name=$name, r.group=$group, r.type=$rtype,
+MERGE (r:Rule {rkey:$rkey, client_id:$client_id})
+SET r.client_id=$client_id, r.name=$name, r.group=$group, r.type=$rtype,
     r.labels_json=$labels_json, r.annotations_json=$ann_json, r.expr=$expr,
     r.cluster=$cluster, r.updated_at=datetime($at)`
 	if err := writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
@@ -622,9 +678,13 @@ SET r.name=$name, r.group=$group, r.type=$rtype,
 	if ns != "" && svc != "" {
 		_ = writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
 			_, err := tx.Run(ctx, `
-MATCH (r:Rule {rkey:$rkey})
-MATCH (s:Resource {rid:$rid})
-MERGE (r)-[:SCOPES]->(s)`, map[string]any{"rkey": rkey, "rid": fmt.Sprintf("service:%s:%s", ns, svc)})
+MATCH (r:Rule {rkey:$rkey, client_id:$client_id})
+MATCH (s:Resource {rid:$rid, client_id:$client_id})
+MERGE (r)-[:SCOPES {client_id:$client_id}]->(s)`, map[string]any{
+				"rkey":      rkey,
+				"client_id": rec.ClientID,
+				"rid":       fmt.Sprintf("service:%s:%s", ns, svc),
+			})
 			return err
 		})
 	}
@@ -636,14 +696,14 @@ MERGE (r)-[:SCOPES]->(s)`, map[string]any{"rkey": rkey, "rid": fmt.Sprintf("serv
  **************************************/
 
 // Severity Escalation: WARNING→ERROR after repeats (Production Gap #5)
-func (g *Graph) EscalateSeverity(ctx context.Context, eid string, windowMin, threshold int) error {
+func (g *Graph) EscalateSeverity(ctx context.Context, eid, clientID string, windowMin, threshold int) error {
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 
 	cy := `
-	MATCH (e:Episodic {eid:$eid})-[:ABOUT]->(r:Resource)
+	MATCH (e:Episodic {eid:$eid, client_id:$client_id})-[:ABOUT]->(r:Resource {client_id:$client_id})
 	WHERE e.severity IN ['WARNING', 'ERROR']
-	MATCH (r)<-[:ABOUT]-(prev:Episodic)
+	MATCH (r)<-[:ABOUT]-(prev:Episodic {client_id:$client_id})
 	WHERE prev.reason = e.reason
 	  AND prev.event_time >= e.event_time - duration({minutes:$window})
 	  AND prev.eid <> e.eid
@@ -659,6 +719,7 @@ func (g *Graph) EscalateSeverity(ctx context.Context, eid string, windowMin, thr
 
 	params := map[string]any{
 		"eid":       eid,
+		"client_id": clientID,
 		"window":    windowMin,
 		"threshold": threshold,
 	}
@@ -670,15 +731,15 @@ func (g *Graph) EscalateSeverity(ctx context.Context, eid string, windowMin, thr
 }
 
 // Incident Clustering: Group related episodic events
-func (g *Graph) ClusterIncident(ctx context.Context, eid string, windowMin int) error {
+func (g *Graph) ClusterIncident(ctx context.Context, eid, clientID string, windowMin int) error {
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 
 	// Find related events in time window with shared resources
 	cy := `
-	MATCH (e:Episodic {eid:$eid})-[:ABOUT]->(r:Resource)
+	MATCH (e:Episodic {eid:$eid, client_id:$client_id})-[:ABOUT]->(r:Resource {client_id:$client_id})
 	WITH e, r
-	MATCH (r)<-[:ABOUT]-(related:Episodic)
+	MATCH (r)<-[:ABOUT]-(related:Episodic {client_id:$client_id})
 	WHERE related.event_time >= e.event_time - duration({minutes:$window})
 	  AND related.event_time <= e.event_time + duration({minutes:$window})
 	  AND related.eid <> e.eid
@@ -688,6 +749,7 @@ func (g *Graph) ClusterIncident(ctx context.Context, eid string, windowMin int) 
 
 	// Create or find incident node
 	MERGE (inc:Incident {
+		client_id: $client_id,
 		resource_id: head([(e)-[:ABOUT]->(r) | r.rid]),
 		window_start: datetime(e.event_time) - duration({minutes:$window})
 	})
@@ -696,15 +758,16 @@ func (g *Graph) ClusterIncident(ctx context.Context, eid string, windowMin int) 
 	    inc.updated_at = datetime()
 
 	// Link events to incident
-	MERGE (e)-[:PART_OF]->(inc)
+	MERGE (e)-[:PART_OF {client_id:$client_id}]->(inc)
 	WITH inc, related_events
 	UNWIND related_events AS rel
-	MERGE (rel)-[:PART_OF]->(inc)
+	MERGE (rel)-[:PART_OF {client_id:$client_id}]->(inc)
 	RETURN inc.resource_id, inc.event_count`
 
 	params := map[string]any{
-		"eid":    eid,
-		"window": windowMin,
+		"eid":       eid,
+		"client_id": clientID,
+		"window":    windowMin,
 	}
 
 	return writeWithRetry(ctx, s, func(tx neo4j.ManagedTransaction) error {
@@ -714,15 +777,15 @@ func (g *Graph) ClusterIncident(ctx context.Context, eid string, windowMin int) 
 }
 
 // Enhanced LinkRCA with confidence scoring (domain heuristics)
-func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int) error {
+func (g *Graph) LinkRCAWithScore(ctx context.Context, eid, clientID string, windowMin int) error {
 	startTime := time.Now()
 	s := g.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 
 	cy := `
-	MATCH (e:Episodic {eid:$eid})-[:ABOUT]->(r:Resource)
+	MATCH (e:Episodic {eid:$eid, client_id:$client_id})-[:ABOUT]->(r:Resource {client_id:$client_id})
 	WITH e, r
-	MATCH (c:Episodic)-[:ABOUT]->(u:Resource)
+	MATCH (c:Episodic {client_id:$client_id})-[:ABOUT]->(u:Resource {client_id:$client_id})
 	WHERE c.event_time <= e.event_time
 	  AND c.event_time >= e.event_time - duration({minutes:$mins})
 	  AND u <> r
@@ -763,7 +826,7 @@ func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int)
 	WITH e, c, p, temporal_score, distance_score, domain_score,
 	     (temporal_score * 0.3 + distance_score * 0.3 + domain_score * 0.4) AS confidence
 
-	MERGE (c)-[pc:POTENTIAL_CAUSE]->(e)
+	MERGE (c)-[pc:POTENTIAL_CAUSE {client_id:$client_id}]->(e)
 	ON CREATE SET pc.hops = length(p),
 	              pc.created_at = datetime()
 	SET pc.confidence = confidence,
@@ -774,8 +837,9 @@ func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int)
 	RETURN c.eid, e.eid, confidence, temporal_score, distance_score, domain_score ORDER BY confidence DESC`
 
 	params := map[string]any{
-		"eid":  eid,
-		"mins": windowMin,
+		"eid":       eid,
+		"client_id": clientID,
+		"mins":      windowMin,
 	}
 
 	var linksCreated int
@@ -834,6 +898,7 @@ func (g *Graph) LinkRCAWithScore(ctx context.Context, eid string, windowMin int)
 type handler struct {
 	graph     *Graph
 	rcaWindow int
+	clientID  string // Multi-tenant: filter messages by client_id
 	// topics
 	resTopic, topoTopic, evtTopic string
 	logsTopic                     string
@@ -847,9 +912,11 @@ func (h *handler) Cleanup(s sarama.ConsumerGroupSession) error { return nil }
 func (h *handler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		if err := h.dispatch(msg); err != nil {
-  if isConstraintErr(err) { continue }
-  log.Printf("consume %s p%d@%d err: %v", msg.Topic, msg.Partition, msg.Offset, err)
-}
+			if isConstraintErr(err) {
+				continue
+			}
+			log.Printf("consume %s p%d@%d err: %v", msg.Topic, msg.Partition, msg.Offset, err)
+		}
 		sess.MarkMessage(msg, "")
 	}
 	return nil
@@ -877,64 +944,233 @@ func (h *handler) dispatch(msg *sarama.ConsumerMessage) error {
 }
 
 func (h *handler) handleResource(msg *sarama.ConsumerMessage) error {
+	tenantFromKey, rawKey := splitTenantKey(string(msg.Key))
 	if msg.Value == nil || len(msg.Value) == 0 {
-		return h.graph.DeleteResourceByKey(context.Background(), string(msg.Key))
+		if h.clientID != "" {
+			if tenantFromKey == "" {
+				return nil
+			}
+			if tenantFromKey != h.clientID {
+				return nil
+			}
+		}
+		return h.graph.DeleteResourceByKey(context.Background(), rawKey, tenantFromKey)
 	}
 	var rec ResourceRecord
 	if err := json.Unmarshal(msg.Value, &rec); err != nil {
 		return err
 	}
+
+	// Multi-tenant: filter by client_id if configured
+	if rec.ClientID == "" && tenantFromKey != "" {
+		rec.ClientID = tenantFromKey
+	}
+	if h.clientID != "" {
+		switch {
+		case rec.ClientID == "":
+			if tenantFromKey == "" || tenantFromKey != h.clientID {
+				return nil
+			}
+			rec.ClientID = tenantFromKey
+		case rec.ClientID != h.clientID:
+			return nil // Skip messages from other clients
+		}
+	}
+
 	if strings.EqualFold(rec.Op, "DELETE") {
-		return h.graph.DeleteResourceByKey(context.Background(), string(msg.Key))
+		return h.graph.DeleteResourceByKey(context.Background(), rawKey, rec.ClientID)
 	}
 	return h.graph.UpsertResource(context.Background(), rec)
 }
 
 func (h *handler) handleTopo(msg *sarama.ConsumerMessage) error {
-	id := string(msg.Key)
+	tenantFromKey, rawID := splitTenantKey(string(msg.Key))
 	if msg.Value == nil || len(msg.Value) == 0 {
-		return h.graph.DeleteEdgeByID(context.Background(), id)
+		if h.clientID != "" {
+			if tenantFromKey == "" || tenantFromKey != h.clientID {
+				return nil
+			}
+		}
+		return h.graph.DeleteEdgeByID(context.Background(), rawID, tenantFromKey)
 	}
 	var rec EdgeRecord
 	if err := json.Unmarshal(msg.Value, &rec); err != nil {
 		return err
 	}
 	if rec.ID == "" {
-		rec.ID = id
+		rec.ID = rawID
+	}
+	if rec.ClientID == "" && tenantFromKey != "" {
+		rec.ClientID = tenantFromKey
+	}
+	if h.clientID != "" {
+		switch {
+		case rec.ClientID == "" && tenantFromKey != "":
+			rec.ClientID = tenantFromKey
+		case rec.ClientID == "":
+			return nil
+		case rec.ClientID != h.clientID:
+			return nil
+		}
 	}
 	if strings.EqualFold(rec.Op, "DELETE") {
-		return h.graph.DeleteEdgeByID(context.Background(), rec.ID)
+		return h.graph.DeleteEdgeByID(context.Background(), rec.ID, rec.ClientID)
 	}
 	return h.graph.UpsertEdge(context.Background(), rec)
 }
 
 // ENHANCED: Event handling with RCA, severity escalation, and incident clustering
 func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
-	startTime := time.Now()
+    startTime := time.Now()
 
-	if msg.Value == nil || len(msg.Value) == 0 {
-		return nil
+    if msg.Value == nil || len(msg.Value) == 0 {
+        return nil
+    }
+    tenantFromKey, rawKey := splitTenantKey(string(msg.Key))
+    var ev EventNormalized
+    if err := json.Unmarshal(msg.Value, &ev); err != nil {
+        return err
+    }
+
+    // Backward/forward compatibility: if incoming message is not in normalized schema
+    // (missing etype/subject), try to map from kubernetes-event-exporter payload.
+    if strings.TrimSpace(ev.Etype) == "" || (ev.Subject == (EventSubject{})) {
+        // Lightweight shape for exporter payload
+        var raw struct {
+            ClientID       string                 `json:"client_id"`
+            Metadata       map[string]any         `json:"metadata"`
+            Reason         string                 `json:"reason"`
+            Message        string                 `json:"message"`
+            Type           string                 `json:"type"`
+            EventTime      any                    `json:"eventTime"`
+            FirstTimestamp string                 `json:"firstTimestamp"`
+            LastTimestamp  string                 `json:"lastTimestamp"`
+            InvolvedObject struct {
+                Kind      string `json:"kind"`
+                UID       string `json:"uid"`
+                Namespace string `json:"namespace"`
+                Name      string `json:"name"`
+            } `json:"involvedObject"`
+        }
+        if err := json.Unmarshal(msg.Value, &raw); err == nil {
+            // Fill client_id from payload or Kafka key or consumer default
+            if ev.ClientID == "" {
+                ev.ClientID = raw.ClientID
+            }
+            if ev.ClientID == "" && tenantFromKey != "" {
+                ev.ClientID = tenantFromKey
+            }
+            if ev.ClientID == "" && h.clientID != "" {
+                ev.ClientID = h.clientID  // Use graph-builder's default CLIENT_ID
+            }
+
+            // Normalize event_time
+            et := ""
+            switch t := raw.EventTime.(type) {
+            case string:
+                et = t
+            case nil:
+                et = ""
+            default:
+                // Fallback to RFC3339 if possible
+                et = fmt.Sprint(t)
+            }
+            if et == "" {
+                if raw.LastTimestamp != "" {
+                    et = raw.LastTimestamp
+                } else if raw.FirstTimestamp != "" {
+                    et = raw.FirstTimestamp
+                } else {
+                    et = time.Now().UTC().Format(time.RFC3339Nano)
+                }
+            }
+            ev.EventTime = et
+
+            // Event type
+            ev.Etype = "k8s.event"
+
+            // Severity: map from Type (Normal/Warning) to INFO/WARNING, else uppercased
+            tp := strings.ToUpper(strings.TrimSpace(raw.Type))
+            switch tp {
+            case "NORMAL":
+                ev.Severity = "INFO"
+            case "WARNING":
+                ev.Severity = "WARNING"
+            case "ERROR", "FATAL", "CRITICAL":
+                ev.Severity = tp
+            default:
+                if tp == "" {
+                    ev.Severity = "INFO"
+                } else {
+                    ev.Severity = tp
+                }
+            }
+
+            // Reason/message
+            ev.Reason = ifEmpty(strings.TrimSpace(raw.Reason), "Unknown")
+            ev.Message = raw.Message
+
+            // Subject
+            ev.Subject = EventSubject{
+                Kind: ifEmpty(raw.InvolvedObject.Kind, "Unknown"),
+                UID:  raw.InvolvedObject.UID,
+                NS:   raw.InvolvedObject.Namespace,
+                Name: raw.InvolvedObject.Name,
+            }
+
+            // EventID: prefer Metadata.uid or Kafka key, fallback to hash of time+reason+subject
+            if ev.EventID == "" {
+                if rawUID, _ := raw.Metadata["uid"].(string); rawUID != "" {
+                    ev.EventID = rawUID
+                } else if rawKey != "" {
+                    ev.EventID = rawKey
+                } else {
+                    h := sha1.New()
+                    ioStr := fmt.Sprintf("%s|%s|%s/%s|%s", ev.EventTime, ev.Etype, ev.Subject.NS, ev.Subject.Name, ev.Reason)
+                    _, _ = h.Write([]byte(ioStr))
+                    ev.EventID = hex.EncodeToString(h.Sum(nil))
+                }
+            }
+        }
+    }
+
+	// Multi-tenant: filter by client_id if configured
+	if ev.ClientID == "" && tenantFromKey != "" {
+		ev.ClientID = tenantFromKey
 	}
-	var ev EventNormalized
-	if err := json.Unmarshal(msg.Value, &ev); err != nil {
-		return err
+	if h.clientID != "" {
+		switch {
+		case ev.ClientID == "":
+			if tenantFromKey == "" || tenantFromKey != h.clientID {
+				return nil
+			}
+			ev.ClientID = tenantFromKey
+		case ev.ClientID != h.clientID:
+			return nil // Skip messages from other clients
+		}
 	}
+
 	if ev.EventID == "" {
-		ev.EventID = string(msg.Key)
+		if rawKey != "" {
+			ev.EventID = rawKey
+		} else {
+			ev.EventID = string(msg.Key)
+		}
 	}
 	if err := h.graph.UpsertEpisodeAndLink(context.Background(), ev); err != nil {
 		return err
 	}
 	if ev.Reason != "" {
-		_ = h.linkRuleToEpisode(context.Background(), ev.Reason, ev.EventID)
+		_ = h.linkRuleToEpisode(context.Background(), ev.Reason, ev.EventID, ev.ClientID)
 	}
 
 	// ENHANCED: Use LinkRCAWithScore for confidence-based causal links
 	rcaStart := time.Now()
-	if err := h.graph.LinkRCAWithScore(context.Background(), ev.EventID, h.rcaWindow); err != nil {
+	clientID := ev.ClientID
+	if err := h.graph.LinkRCAWithScore(context.Background(), ev.EventID, clientID, h.rcaWindow); err != nil {
 		log.Printf("LinkRCAWithScore failed for %s: %v", ev.EventID, err)
 		// Fallback to simple LinkRCA if enhanced version fails
-		if fallbackErr := h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow); fallbackErr == nil {
+		if fallbackErr := h.graph.LinkRCA(context.Background(), ev.EventID, clientID, h.rcaWindow); fallbackErr == nil {
 			// Track that we used fallback (NULL confidence)
 			rcaNullConfidenceLinks.Inc()
 		}
@@ -953,13 +1189,13 @@ func (h *handler) handleEvent(msg *sarama.ConsumerMessage) error {
 		if v := getenv("SEVERITY_ESCALATION_THRESHOLD", ""); v != "" {
 			fmt.Sscanf(v, "%d", &threshold)
 		}
-		_ = h.graph.EscalateSeverity(context.Background(), ev.EventID, windowMin, threshold)
+		_ = h.graph.EscalateSeverity(context.Background(), ev.EventID, clientID, windowMin, threshold)
 	}
 
 	// ENHANCED: Cluster related incidents (for ERROR/FATAL events)
 	incidentClusteringEnabled := getenv("INCIDENT_CLUSTERING_ENABLED", "true") == "true"
 	if incidentClusteringEnabled && (strings.ToUpper(ev.Severity) == "ERROR" || strings.ToUpper(ev.Severity) == "FATAL") {
-		_ = h.graph.ClusterIncident(context.Background(), ev.EventID, h.rcaWindow)
+		_ = h.graph.ClusterIncident(context.Background(), ev.EventID, clientID, h.rcaWindow)
 	}
 
 	// Track end-to-end latency and SLA compliance
@@ -978,6 +1214,11 @@ func (h *handler) handleLog(msg *sarama.ConsumerMessage) error {
 	var lr LogNormalized
 	if err := json.Unmarshal(msg.Value, &lr); err != nil {
 		return err
+	}
+
+	// Multi-tenant: filter by client_id if configured
+	if h.clientID != "" && lr.ClientID != "" && lr.ClientID != h.clientID {
+		return nil // Skip messages from other clients
 	}
 
 	// filter: only high-signal to avoid graph bloat
@@ -1027,6 +1268,7 @@ func (h *handler) handleLog(msg *sarama.ConsumerMessage) error {
 		Reason:    reason,
 		Message:   lr.Message,
 		Subject:   lr.Subject,
+		ClientID:  lr.ClientID,
 	}
 
 	if err := h.graph.UpsertEpisodeAndLink(context.Background(), ev); err != nil {
@@ -1034,9 +1276,10 @@ func (h *handler) handleLog(msg *sarama.ConsumerMessage) error {
 	}
 
 	// ENHANCED: Use LinkRCAWithScore for confidence-based causal links
-	if err := h.graph.LinkRCAWithScore(context.Background(), ev.EventID, h.rcaWindow); err != nil {
+	clientID := ev.ClientID
+	if err := h.graph.LinkRCAWithScore(context.Background(), ev.EventID, clientID, h.rcaWindow); err != nil {
 		// Fallback to simple LinkRCA if enhanced version fails
-		if fallbackErr := h.graph.LinkRCA(context.Background(), ev.EventID, h.rcaWindow); fallbackErr == nil {
+		if fallbackErr := h.graph.LinkRCA(context.Background(), ev.EventID, clientID, h.rcaWindow); fallbackErr == nil {
 			// Track that we used fallback (NULL confidence)
 			rcaNullConfidenceLinks.Inc()
 		}
@@ -1053,12 +1296,12 @@ func (h *handler) handleLog(msg *sarama.ConsumerMessage) error {
 		if v := getenv("SEVERITY_ESCALATION_THRESHOLD", ""); v != "" {
 			fmt.Sscanf(v, "%d", &threshold)
 		}
-		_ = h.graph.EscalateSeverity(context.Background(), ev.EventID, windowMin, threshold)
+		_ = h.graph.EscalateSeverity(context.Background(), ev.EventID, clientID, windowMin, threshold)
 	}
 
 	incidentClusteringEnabled := getenv("INCIDENT_CLUSTERING_ENABLED", "true") == "true"
 	if incidentClusteringEnabled && (strings.ToUpper(ev.Severity) == "ERROR" || strings.ToUpper(ev.Severity) == "FATAL") {
-		_ = h.graph.ClusterIncident(context.Background(), ev.EventID, h.rcaWindow)
+		_ = h.graph.ClusterIncident(context.Background(), ev.EventID, clientID, h.rcaWindow)
 	}
 
 	return nil
@@ -1144,8 +1387,7 @@ func isHighSignalLog(sev, msg string) bool {
 	}
 
 	// Category 7: Database errors
-	if strings.Contains(m, "database") && (
-		strings.Contains(m, "connection failed") || strings.Contains(m, "connection lost") ||
+	if strings.Contains(m, "database") && (strings.Contains(m, "connection failed") || strings.Contains(m, "connection lost") ||
 		strings.Contains(m, "query timeout") || strings.Contains(m, "deadlock") ||
 		strings.Contains(m, "duplicate key") || strings.Contains(m, "constraint violation") ||
 		strings.Contains(m, "too many connections") || strings.Contains(m, "connection pool")) {
@@ -1153,8 +1395,7 @@ func isHighSignalLog(sev, msg string) bool {
 	}
 
 	// Category 8: Security/Certificate errors
-	if strings.Contains(m, "certificate") && (
-		strings.Contains(m, "expired") || strings.Contains(m, "invalid") ||
+	if strings.Contains(m, "certificate") && (strings.Contains(m, "expired") || strings.Contains(m, "invalid") ||
 		strings.Contains(m, "verify failed") || strings.Contains(m, "untrusted")) ||
 		strings.Contains(m, "tls handshake") && strings.Contains(m, "failed") ||
 		strings.Contains(m, "authentication failed") || strings.Contains(m, "permission denied") {
@@ -1208,36 +1449,58 @@ func classifyLogReason(sev, msg string) string {
 }
 
 /*** Rule linkage ***/
-func (h *handler) linkRuleToEpisode(ctx context.Context, ruleName, eid string) error {
+func (h *handler) linkRuleToEpisode(ctx context.Context, ruleName, eid, clientID string) error {
 	s := h.graph.drv.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer s.Close(ctx)
 	_, err := s.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
 		_, err := tx.Run(ctx, `
-MATCH (e:Episodic {eid:$eid})
-MATCH (r:Rule {name:$name})
-MERGE (r)-[:EMITS]->(e)`, map[string]any{"eid": eid, "name": ruleName})
+MATCH (e:Episodic {eid:$eid, client_id:$client_id})
+MATCH (r:Rule {name:$name, client_id:$client_id})
+MERGE (r)-[:EMITS {client_id:$client_id}]->(e)`, map[string]any{"eid": eid, "name": ruleName, "client_id": clientID})
 		return nil, err
 	})
 	return err
 }
 
 func (h *handler) handlePromTarget(msg *sarama.ConsumerMessage) error {
-	key := string(msg.Key)
+	tenantFromKey, rawKey := splitTenantKey(string(msg.Key))
 	if msg.Value == nil || len(msg.Value) == 0 {
-		return h.graph.DeletePromTargetByKey(context.Background(), key)
+		if h.clientID != "" {
+			if tenantFromKey == "" || tenantFromKey != h.clientID {
+				return nil
+			}
+		}
+		return h.graph.DeletePromTargetByKey(context.Background(), rawKey, tenantFromKey)
 	}
 	var rec PromTargetRecord
 	if err := json.Unmarshal(msg.Value, &rec); err != nil {
 		return err
 	}
-	if strings.EqualFold(rec.Op, "DELETE") {
-		return h.graph.DeletePromTargetByKey(context.Background(), key)
+
+	// Multi-tenant: filter by client_id if configured
+	if rec.ClientID == "" && tenantFromKey != "" {
+		rec.ClientID = tenantFromKey
 	}
-	return h.graph.UpsertPromTarget(context.Background(), key, rec)
+	if h.clientID != "" {
+		switch {
+		case rec.ClientID == "":
+			if tenantFromKey == "" || tenantFromKey != h.clientID {
+				return nil
+			}
+			rec.ClientID = tenantFromKey
+		case rec.ClientID != h.clientID:
+			return nil
+		}
+	}
+
+	if strings.EqualFold(rec.Op, "DELETE") {
+		return h.graph.DeletePromTargetByKey(context.Background(), rawKey, rec.ClientID)
+	}
+	return h.graph.UpsertPromTarget(context.Background(), rawKey, rec)
 }
 
 func (h *handler) handleRule(msg *sarama.ConsumerMessage) error {
-	key := string(msg.Key)
+	tenantFromKey, rawKey := splitTenantKey(string(msg.Key))
 	if msg.Value == nil || len(msg.Value) == 0 {
 		return nil // soft-delete optional
 	}
@@ -1245,17 +1508,36 @@ func (h *handler) handleRule(msg *sarama.ConsumerMessage) error {
 	if err := json.Unmarshal(msg.Value, &rec); err != nil {
 		return err
 	}
+
+	// Multi-tenant: filter by client_id if configured
+	if rec.ClientID == "" && tenantFromKey != "" {
+		rec.ClientID = tenantFromKey
+	}
+	if h.clientID != "" {
+		switch {
+		case rec.ClientID == "":
+			if tenantFromKey == "" || tenantFromKey != h.clientID {
+				return nil
+			}
+			rec.ClientID = tenantFromKey
+		case rec.ClientID != h.clientID:
+			return nil
+		}
+	}
+
 	if strings.EqualFold(rec.Op, "DELETE") {
 		return nil
 	}
-	return h.graph.UpsertRule(context.Background(), key, rec)
+	return h.graph.UpsertRule(context.Background(), rawKey, rec)
 }
 
 func (h *handler) handleCommand(msg *sarama.ConsumerMessage) error {
 	if msg.Value == nil || len(msg.Value) == 0 {
 		return nil
 	}
-	var m struct{ Op string `json:"op"` }
+	var m struct {
+		Op string `json:"op"`
+	}
 	if err := json.Unmarshal(msg.Value, &m); err != nil {
 		return err
 	}
@@ -1286,7 +1568,16 @@ func main() {
 	}
 
 	brokers := strings.Split(getenv("KAFKA_BROKERS", "localhost:9092"), ",")
+
+	// Multi-tenant: Support client-specific consumer groups OR single-instance mode
+	clientID := getenv("CLIENT_ID", "")
 	group := getenv("KAFKA_GROUP", "kg-builder")
+	if clientID != "" {
+		group = fmt.Sprintf("%s-%s", group, clientID)
+		log.Printf("single-tenant mode: client_id=%s, consumer_group=%s", clientID, group)
+	} else {
+		log.Printf("multi-tenant mode: processing all clients, consumer_group=%s", group)
+	}
 
 	neo4jURI := getenv("NEO4J_URI", "neo4j://localhost:7687")
 	neo4jUser := getenv("NEO4J_USER", "neo4j")
@@ -1315,7 +1606,12 @@ func main() {
 	cfg.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRange
 	cfg.Consumer.Offsets.Initial = sarama.OffsetNewest // set to Oldest for full backfill on first run
 	cfg.Consumer.Return.Errors = true
-	cfg.ClientID = "kg-builder"
+	// Multi-tenant: Use client-specific Kafka client ID
+	kafkaClientID := "kg-builder"
+	if clientID != "" {
+		kafkaClientID = fmt.Sprintf("kg-builder-%s", clientID)
+	}
+	cfg.ClientID = kafkaClientID
 
 	cg, err := sarama.NewConsumerGroup(brokers, group, cfg)
 	if err != nil {
@@ -1326,6 +1622,7 @@ func main() {
 	h := &handler{
 		graph:         g,
 		rcaWindow:     rcaWin,
+		clientID:      clientID, // Multi-tenant: filter messages by client_id
 		resTopic:      topicRes,
 		topoTopic:     topicTopo,
 		evtTopic:      topicEvt,

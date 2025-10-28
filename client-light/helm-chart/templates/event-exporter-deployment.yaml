@@ -1,4 +1,6 @@
 {{- if .Values.eventExporter.enabled -}}
+{{- $topicEvents := default "events.normalized" .Values.eventExporter.kafkaTopic -}}
+{{- $topicRawEvents := .Values.eventExporter.rawTopic -}}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -10,30 +12,51 @@ metadata:
     component: event-exporter
 data:
   config.yaml: |
-    logLevel: info
+    logLevel: debug
     logFormat: json
+    maxEventAgeSeconds: 300
     route:
       routes:
         - match:
             - receiver: "kafka"
+            {{- if $topicRawEvents }}
+            - receiver: "kafka-raw"
+            {{- end }}
     receivers:
       - name: "kafka"
         kafka:
           brokers:
-            - {{ .Values.client.kafka.brokers | quote }}
-          {{- $defaultEvents := printf "events.normalized" -}}
-          {{- $topicEvents := default $defaultEvents .Values.eventExporter.kafkaTopic -}}
-          topic: {{ $topicEvents | quote }}
+            - {{ .Values.client.kafka.brokers }}
+          topic: {{ $topicEvents }}
+          clientId: "event-exporter-{{ .Values.client.id }}"
+          compression: gzip
           {{- if .Values.client.kafka.sasl.enabled }}
+          tls:
+            enable: true
           sasl:
             enabled: true
-            mechanism: {{ .Values.client.kafka.sasl.mechanism | quote }}
-            username: "${KAFKA_SASL_USERNAME}"
-            password: "${KAFKA_SASL_PASSWORD}"
+            username: "{{ "{{" }} .Env.KAFKA_SASL_USERNAME {{ "}}" }}"
+            password: "{{ "{{" }} .Env.KAFKA_SASL_PASSWORD {{ "}}" }}"
+            mechanism: {{ .Values.client.kafka.sasl.mechanism }}
           {{- end }}
+      {{- if $topicRawEvents }}
+      - name: "kafka-raw"
+        kafka:
+          brokers:
+            - {{ .Values.client.kafka.brokers }}
+          topic: {{ $topicRawEvents }}
+          clientId: "event-exporter-raw-{{ .Values.client.id }}"
           compression: gzip
-          requireAcks: 1
-          maxRetry: 3
+          {{- if .Values.client.kafka.sasl.enabled }}
+          tls:
+            enable: true
+          sasl:
+            enabled: true
+            username: "{{ "{{" }} .Env.KAFKA_SASL_USERNAME {{ "}}" }}"
+            password: "{{ "{{" }} .Env.KAFKA_SASL_PASSWORD {{ "}}" }}"
+            mechanism: {{ .Values.client.kafka.sasl.mechanism }}
+          {{- end }}
+      {{- end }}
 
 ---
 apiVersion: apps/v1

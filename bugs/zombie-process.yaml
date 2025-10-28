@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: zombie-process
+  namespace: buglab
+  labels:
+    app: bug-zombie
+    scenario: zombie-process
+spec:
+  restartPolicy: Always
+  containers:
+    - name: zombie-creator
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Zombie process scenario: creating orphaned processes"
+          while true; do
+            # Create child process that exits immediately
+            # Parent doesn't wait(), creating zombie
+            (sleep 1 && exit 0) &
+            echo "Created process PID: $!"
+            ps aux | grep -v grep | grep Z || echo "No zombies yet..."
+            sleep 10
+          done
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi

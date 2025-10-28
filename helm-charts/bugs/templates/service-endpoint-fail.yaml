@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-no-endpoints
+  namespace: buglab
+  labels:
+    scenario: service-no-endpoints
+spec:
+  selector:
+    app: nonexistent-backend
+    version: v99.99.99
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client-service-fail
+  namespace: buglab
+  labels:
+    app: bug-service-client
+    scenario: service-no-endpoints
+spec:
+  restartPolicy: Always
+  containers:
+    - name: client
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Service endpoint failure scenario"
+          while true; do
+            echo "Attempting to connect to svc-no-endpoints..."
+            wget -T 5 -t 1 http://svc-no-endpoints.buglab.svc.cluster.local || echo "Service unavailable - no endpoints"
+            sleep 10
+          done
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi

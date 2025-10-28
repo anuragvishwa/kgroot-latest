@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-registry
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: register
+        image: anuragvishwa/kafka-producer-minimal:1.0.0
+        command:
+          - /bin/sh
+          - -c
+          - |
+            echo '{{ .Values.client.id }}::{"client_id":"{{ .Values.client.id }}","cluster_name":"{{ .Values.cluster.name }}","region":"{{ .Values.cluster.region | default "unknown" }}","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","chart_version":"{{ .Chart.Version }}"}' | \
+            kafka-console-producer \
+              --bootstrap-server {{ .Values.client.kafka.brokers }} \
+              --topic cluster.registry \
+              --property "parse.key=true" \
+              --property "key.separator=::"

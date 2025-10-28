@@ -15,15 +15,20 @@ client:
 
   # Kafka connection
   kafka:
-    brokers: "kafka.kg-rca.yourcompany.com:9092"
+    brokers: "98.90.147.12:9092"
     sasl:
-      enabled: false  # Set to true for SSL/SASL authentication
+      enabled: false # Set to true for SSL/SASL authentication
       mechanism: SCRAM-SHA-512
-      username: ""  # Same as client.id
-      password: ""  # Provided by server
+      username: "" # Same as client.id
+      password: "" # Provided by server
 
   # Namespace to monitor (default: all accessible namespaces)
-  monitoredNamespaces: []  # Empty means all accessible
+  monitoredNamespaces: [] # Empty means all accessible
+
+# Cluster metadata
+cluster:
+  # Human-readable cluster name (defaults to client.id if not set)
+  name: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # State Watcher - Kubernetes Resource Monitoring
@@ -32,7 +37,7 @@ stateWatcher:
   enabled: true
   image:
     repository: anuragvishwa/kg-state-watcher
-    tag: "1.0.2"
+    tag: "1.0.3"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -45,11 +50,20 @@ stateWatcher:
       cpu: 500m
       memory: 512Mi
 
+  # Prometheus HTTP endpoint used for /api/v1/targets scraping.
+  # Override this when your kube-prometheus-stack release uses a different service name.
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+
   env:
-    KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
+    KAFKA_BROKERS: "" # Populated from client.kafka.brokers
     KAFKA_TOPIC_RESOURCE: "state.k8s.resource"
     KAFKA_TOPIC_TOPOLOGY: "state.k8s.topology"
-    WATCH_NAMESPACES: ""  # Populated from client.monitoredNamespaces
+    WATCH_NAMESPACES: "" # Populated from client.monitoredNamespaces
+
+  # Explicit topic overrides for templates
+  topicResource: ""
+  topicTopology: ""
+  topicPromTargets: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # Vector - Log Collection
@@ -92,12 +106,24 @@ vector:
       kafka:
         type: kafka
         inputs: ["normalize"]
-        bootstrap_servers: ""  # Populated from client.kafka.brokers
-        topic: ""  # Set via vector.kafkaTopic; default resolves to logs.normalized
+        bootstrap_servers: "" # Populated from client.kafka.brokers
+        topic: "" # Set via vector.kafkaTopic; default resolves to logs.normalized
         encoding:
           codec: json
   # Optional override for logs topic (default: logs.normalized)
   kafkaTopic: ""
+  # Optional mirror of raw container logs directly to Kafka
+  rawLogsTopic: "" # e.g., "raw.k8s.logs" to also publish raw logs
+
+# ───────────────────────────────────────────────────────────────────────────
+# Alertmanager Webhook (Vector-based)
+# Accept Alertmanager POSTs and forward to Kafka
+# ───────────────────────────────────────────────────────────────────────────
+alertsWebhook:
+  enabled: true
+  port: 9090
+  # Raw topic for storing original Alertmanager payloads (optional)
+  rawTopic: "raw.prom.alerts"
 
 # ───────────────────────────────────────────────────────────────────────────
 # Event Exporter - Kubernetes Events
@@ -124,14 +150,22 @@ eventExporter:
       routes:
         - match:
             - receiver: kafka
+        - match:
+            - receiver: kafka-raw
     receivers:
       - name: kafka
         kafka:
-          brokers: []  # Populated from client.kafka.brokers
-          topic: ""  # Set via eventExporter.kafkaTopic; default resolves to events.normalized
+          brokers: [] # Populated from client.kafka.brokers
+          topic: "" # Set via eventExporter.kafkaTopic; default resolves to events.normalized
+      - name: kafka-raw
+        kafka:
+          brokers: [] # Populated from client.kafka.brokers
+          topic: "" # Set via eventExporter.rawTopic; default resolves to raw.k8s.events
 
   # Optional override for events topic (default: events.normalized)
   kafkaTopic: ""
+  # Optional mirror to raw events topic
+  rawTopic: ""
 
 # ───────────────────────────────────────────────────────────────────────────
 # Prometheus Agent - Metrics Collection
@@ -166,11 +200,12 @@ prometheusAgent:
       evaluation_interval: 30s
 
     scrape_configs:
-      - job_name: 'kubernetes-pods'
+      - job_name: "kubernetes-pods"
         kubernetes_sd_configs:
           - role: pod
         relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+          - source_labels:
+              [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
             action: keep
             regex: true
 
@@ -181,8 +216,8 @@ alertReceiver:
   enabled: true
   image:
     repository: anuragvishwa/kg-alert-receiver
-    tag: "1.0.2"
-    pullPolicy: IfNotPresent
+    tag: "1.0.18"
+    pullPolicy: Always
 
   replicaCount: 2
 
@@ -195,15 +230,9 @@ alertReceiver:
       memory: 512Mi
 
   env:
-    KAFKA_BROKERS: ""  # Populated from client.kafka.brokers
+    KAFKA_BROKERS: "" # Populated from client.kafka.brokers
     KAFKA_TOPIC: "alerts.raw"
-    CLIENT_ID: ""  # Populated from client.id
-
-# Explicit topic overrides for templates
-stateWatcher:
-  topicResource: ""
-  topicTopology: ""
-  topicPromTargets: ""
+    CLIENT_ID: "" # Populated from client.id
 
 # ───────────────────────────────────────────────────────────────────────────
 # RBAC - Service Account and Permissions
@@ -215,7 +244,18 @@ rbac:
   clusterRole:
     rules:
       - apiGroups: [""]
-        resources: ["pods", "services", "endpoints", "nodes", "events", "namespaces", "configmaps"]
+        resources:
+          [
+            "pods",
+            "services",
+            "endpoints",
+            "nodes",
+            "events",
+            "namespaces",
+            "configmaps",
+            "persistentvolumeclaims",
+            "persistentvolumes",
+          ]
         verbs: ["get", "list", "watch"]
       - apiGroups: ["events.k8s.io"]
         resources: ["events"]
@@ -235,6 +275,72 @@ serviceAccount:
   name: kg-rca-agent
 
 # ───────────────────────────────────────────────────────────────────────────
+# Prometheus (kube-prometheus-stack) - Optional
+# Install Prometheus if it doesn't exist in the cluster
+# ───────────────────────────────────────────────────────────────────────────
+prometheus:
+  # Set to true to install kube-prometheus-stack as a subchart
+  install: false
+
+  # Namespace where Prometheus will be installed (if install: true)
+  # If different from .Release.Namespace, a separate namespace will be created
+  namespace: "monitoring"
+
+  # Release name for the Prometheus installation
+  releaseName: "kube-prometheus-stack"
+
+  # kube-prometheus-stack chart configuration
+  # These values are passed to the kube-prometheus-stack subchart
+  config:
+    # Disable Grafana by default (you can enable if needed)
+    grafana:
+      enabled: false
+
+    # Enable Prometheus
+    prometheus:
+      enabled: true
+      service:
+        port: 9090
+      prometheusSpec:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        retention: 7d
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi
+
+    # Enable AlertManager
+    alertmanager:
+      enabled: true
+      service:
+        port: 9093
+      alertmanagerSpec:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+    # Enable kube-state-metrics
+    kubeStateMetrics:
+      enabled: true
+
+    # Disable node-exporter by default (enable if you need node metrics)
+    nodeExporter:
+      enabled: false
+
+# ───────────────────────────────────────────────────────────────────────────
 # Network Policies
 # ───────────────────────────────────────────────────────────────────────────
 networkPolicy:
@@ -243,13 +349,20 @@ networkPolicy:
   egress:
     # Allow outbound to server
     - to:
-      - podSelector: {}
+        - podSelector: {}
       ports:
-      - protocol: TCP
-        port: 443
+        - protocol: TCP
+          port: 443
     # Allow DNS
     - to:
-      - namespaceSelector: {}
+        - namespaceSelector: {}
       ports:
-      - protocol: UDP
-        port: 53
+        - protocol: UDP
+          port: 53
+
+# ==============================================================================
+# Heartbeat Configuration (V2 Control Plane)
+# ==============================================================================
+heartbeat:
+  enabled: true
+  interval: "30s"  # Sends heartbeat every minute via CronJob

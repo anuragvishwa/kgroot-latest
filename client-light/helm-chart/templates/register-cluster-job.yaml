@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-register-cluster
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: register
+        image: edenhill/kcat:1.7.1
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "📝 Registering cluster {{ .Values.client.id }}..."
+
+          # Create registration message (minified JSON on single line)
+          REGISTRATION='{"client_id":"{{ .Values.client.id }}","cluster_name":"{{ .Values.cluster.name | default .Values.client.id }}","version":"{{ .Chart.Version }}","registered_at":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","metadata":{"namespace":"{{ .Release.Namespace }}","release_name":"{{ .Release.Name }}","chart_version":"{{ .Chart.Version }}"}}'
+
+          # Send to Kafka using kcat (kafkacat)
+          echo "$REGISTRATION" | kcat -P \
+            -b {{ .Values.client.kafka.brokers }} \
+            -t cluster.registry \
+            -K: \
+            -k "{{ .Values.client.id }}"
+
+          if [ $? -eq 0 ]; then
+            echo "✅ Cluster {{ .Values.client.id }} registered successfully!"
+          else
+            echo "❌ Failed to register cluster {{ .Values.client.id }}"
+            exit 1
+          fi

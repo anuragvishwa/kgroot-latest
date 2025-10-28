@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cpu-throttle
+  namespace: buglab
+  labels:
+    app: bug-cpu-throttle
+    scenario: cpu-throttle
+spec:
+  restartPolicy: Always
+  containers:
+    - name: cpu-hungry
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "CPU throttle scenario: requesting more CPU than limit allows"
+          while true; do
+            echo "Performing CPU intensive work..."
+            dd if=/dev/zero of=/dev/null &
+            dd if=/dev/zero of=/dev/null &
+            dd if=/dev/zero of=/dev/null &
+            sleep 10
+            killall dd 2>/dev/null || true
+            sleep 5
+          done
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 20m
+          memory: 32Mi

@@ -1,0 +1,70 @@
+{{- if and .Values.vector.enabled .Values.alertsWebhook.enabled -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kg-rca-agent.fullname" . }}-configure-alertmanager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kg-rca-agent.labels" . | nindent 4 }}
+    component: alertmanager-config
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "kg-rca-agent.selectorLabels" . | nindent 8 }}
+        component: alertmanager-config
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: OnFailure
+      containers:
+        - name: configure-alertmanager
+          image: bitnami/kubectl:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Waiting for Alertmanager to be ready..."
+              kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=alertmanager -n {{ .Release.Namespace }} --timeout=120s || true
+
+              echo "Configuring Alertmanager webhook to Vector..."
+              cat <<EOF | kubectl apply -f -
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: alertmanager-kube-prometheus-stack-alertmanager
+                namespace: {{ .Release.Namespace }}
+              type: Opaque
+              stringData:
+                alertmanager.yaml: |
+                  global:
+                    resolve_timeout: 5m
+                  route:
+                    group_by: ['alertname', 'cluster', 'service']
+                    group_wait: 10s
+                    group_interval: 10s
+                    repeat_interval: 12h
+                    receiver: 'vector-webhook'
+                  receivers:
+                    - name: 'vector-webhook'
+                      webhook_configs:
+                        - url: 'http://{{ include "kg-rca-agent.fullname" . }}-vector.{{ .Release.Namespace }}.svc:{{ .Values.alertsWebhook.port }}/'
+                          send_resolved: true
+              EOF
+
+              echo "Restarting Alertmanager to reload configuration..."
+              kubectl delete pod -l app.kubernetes.io/name=alertmanager -n {{ .Release.Namespace }} || true
+
+              echo "Waiting for Alertmanager to come back..."
+              sleep 10
+              kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=alertmanager -n {{ .Release.Namespace }} --timeout=120s || true
+
+              echo "Alertmanager configured successfully!"
+{{- end }}

@@ -98,7 +98,9 @@ cat > test-values.yaml <<EOF
 client:
   id: "test-minikube"
   kafka:
-    bootstrapServers: "${SERVER_IP}:9092"
+    brokers: "${SERVER_IP}:9092"
+stateWatcher:
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"  # Update if service name differs
 
 vector:
   enabled: true
@@ -131,7 +133,9 @@ cat > prod-test-values.yaml <<EOF
 client:
   id: "test-prod-cluster"
   kafka:
-    bootstrapServers: "98.90.147.12:9092"  # Replace with your server
+    brokers: "98.90.147.12:9092"  # Replace with your server
+stateWatcher:
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
 
 # Optional: limit to specific namespaces for testing
 monitoredNamespaces: ["default", "test"]
@@ -156,6 +160,7 @@ kubectl get pods -n observability
 # kg-rca-agent-vector-xxxxx                     1/1     Running   0          1m
 # kg-rca-agent-event-exporter-xxxxxxxxxx-xxxxx  1/1     Running   0          1m
 # kg-rca-agent-state-watcher-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+# kg-rca-agent-alert-receiver-xxxxxxxxxx-xxxxx  1/1     Running   0          1m
 ```
 
 ### 2. Check Vector Logs
@@ -187,9 +192,28 @@ kubectl logs -n observability -l app=state-watcher --tail=50
 # Should see:
 # - "Watching resources: Pod, Deployment, Service..."
 # - "Sent resource state to Kafka"
+# - "prom targets" log lines confirming `/api/v1/targets` sync
 ```
 
-### 5. Generate Test Events
+### 5. Check Alert Receiver
+
+```bash
+kubectl logs -n observability -l component=alert-receiver --tail=50
+```
+
+Expected:
+- Starts consumer group `alerts-enricher-<client-id>`
+- Prints `Connected to Kafka` and `Subscribed to topics`
+
+> **Next:** Add the Alertmanager webhook URL  
+> Grab the service name:
+> ```bash
+> kubectl get svc -n observability -l component=alert-webhook
+> ```
+> Then configure Alertmanager:
+> `http://<service>.<namespace>.svc:9090/alerts`
+
+### 6. Generate Test Events
 
 Create some activity in the cluster:
 
@@ -217,6 +241,43 @@ docker exec kg-kafka kafka-console-consumer.sh \
   --bootstrap-server localhost:9092 \
   --topic events.normalized \
   --max-messages 5
+
+#
+# Alertmanager Integration (optional)
+#
+
+To forward Prometheus alerts to Kafka via the client’s alert-receiver, add a webhook receiver in Alertmanager.
+
+- Service URL (in-cluster):
+  - `http://kg-rca-agent-kg-rca-agent-alert-receiver.observability.svc:8080/alerts`
+
+Example (kube-prometheus-stack values):
+
+```yaml
+alertmanager:
+  config:
+    route:
+      receiver: kg-rca-agent
+    receivers:
+      - name: kg-rca-agent
+        webhook_configs:
+          - url: "http://kg-rca-agent-kg-rca-agent-alert-receiver.observability.svc:8080/alerts"
+```
+
+Quick test without changing Alertmanager (sends a sample alert):
+
+```bash
+kubectl -n observability run curl-tmp --rm -it \
+  --image=curlimages/curl:8.5.0 --restart=Never -- \
+  curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  -d '[{"status":"firing","labels":{"alertname":"TestAlert","severity":"warning"},"annotations":{"summary":"test"},"startsAt":"2025-01-01T00:00:00Z"}]' \
+  http://kg-rca-agent-kg-rca-agent-alert-receiver.observability.svc:8080/alerts
+
+# Then verify on the server
+ssh mini-server 'docker exec -it kg-kafka sh -lc \
+  "/opt/kafka/bin/kafka-run-class.sh kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic alerts.raw --time -1"'
+```
 
 # Check Neo4j for your cluster's data
 docker exec kg-neo4j cypher-shell -u neo4j -p Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA \

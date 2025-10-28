@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  kg-rca-api:
+    build:
+      context: ./kgroot-services
+      dockerfile: Dockerfile
+    image: anuragvishwa/kg-rca-api:1.0.0
+    container_name: kg-rca-api
+    ports:
+      - "8082:8080"
+    environment:
+      # OpenAI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ENABLE_LLM=true
+      - LLM_MODEL=gpt-5  # GPT-5 with reasoning capabilities
+
+      # Neo4j Connection
+      - NEO4J_URI=bolt://kg-neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-Kg9mN8pQ2vR5wX7jL4hF6sT3bD1nY0zA}
+
+      # Kafka Connection
+      - KAFKA_BROKERS=kg-kafka:29092
+
+      # Python path
+      - PYTHONPATH=/app
+    command: ["python3", "-m", "uvicorn", "rca_api_neo4j:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
+    networks:
+      - kg-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  kg-network:
+    external: true
+    name: mini-server-prod_kg-network

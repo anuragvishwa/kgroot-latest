@@ -1,0 +1,67 @@
+# KGroot RCA Configuration
+
+# Neo4j Connection
+neo4j:
+  uri: "bolt://localhost:7687"
+  username: "neo4j"
+  password: "your_password_here"
+
+# OpenAI Configuration (for GraphRAG)
+openai:
+  api_key: "sk-your-api-key-here"
+  embedding_model: "text-embedding-3-small"
+
+  # Model Selection: gpt-5, gpt-5-mini, gpt-5-nano, or gpt-4o (fallback)
+  chat_model: "gpt-5"
+
+  # GPT-5 specific settings (ignored if using gpt-4o)
+  reasoning_effort: "medium"  # minimal, low, medium, high
+  verbosity: "medium"  # low, medium, high
+
+  enable_llm_analysis: true
+
+# Graph Builder Configuration
+graph_builder:
+  time_window_seconds: 300  # 5 minutes
+  max_related_events: 5
+  min_correlation_threshold: 0.3
+
+# Pattern Matcher Configuration
+pattern_matcher:
+  jaccard_weight: 0.35
+  service_weight: 0.25
+  sequence_weight: 0.30
+  structure_weight: 0.10
+
+# Root Cause Ranker Configuration
+root_cause_ranker:
+  time_weight: 0.6  # Wt in KGroot paper
+  distance_weight: 0.4  # Wd in KGroot paper
+
+# Service Dependencies
+# Define your microservice topology here
+service_dependencies:
+  api-gateway:
+    - auth-service
+    - user-service
+
+  user-service:
+    - database-service
+    - cache-service
+
+  auth-service:
+    - database-service
+
+  order-service:
+    - payment-service
+    - inventory-service
+    - notification-service
+
+  payment-service:
+    - external-payment-gateway
+
+# Logging
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "kgroot_rca.log"

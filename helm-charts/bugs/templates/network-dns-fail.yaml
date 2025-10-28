@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dns-lookup-fail
+  namespace: buglab
+  labels:
+    app: bug-dns
+    scenario: dns-fail
+spec:
+  restartPolicy: Always
+  containers:
+    - name: dns-client
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "DNS lookup failure scenario"
+          while true; do
+            echo "Attempting to resolve nonexistent-internal-service.buglab.svc.cluster.local"
+            nslookup nonexistent-internal-service.buglab.svc.cluster.local || echo "DNS lookup failed"
+            echo "Attempting to connect to bad-external-host.example.invalid"
+            wget -T 5 -t 1 http://bad-external-host.example.invalid || echo "Connection failed"
+            sleep 15
+          done
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi

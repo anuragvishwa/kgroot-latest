@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-pressure
+  namespace: buglab
+  labels:
+    app: bug-disk-pressure
+    scenario: disk-pressure
+spec:
+  restartPolicy: Always
+  containers:
+    - name: disk-filler
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Disk pressure scenario: writing logs rapidly"
+          while true; do
+            for i in $(seq 1 100); do
+              echo "$(date) - Log entry $i with lots of data: $(dd if=/dev/urandom bs=512 count=1 2>/dev/null | base64)" >> /tmp/massive.log
+            done
+            sleep 2
+            # Keep only last 10000 lines to prevent actual disk fill
+            tail -n 10000 /tmp/massive.log > /tmp/massive.log.tmp
+            mv /tmp/massive.log.tmp /tmp/massive.log
+          done
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: tmp
+      emptyDir:
+        sizeLimit: 50Mi

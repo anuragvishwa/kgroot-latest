@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: imagepull-invalid
+  namespace: buglab
+  labels:
+    app: bug-imagepull
+    scenario: imagepullbackoff
+spec:
+  restartPolicy: Always
+  containers:
+    - name: badimage
+      image: busybox:this-tag-does-not-exist
+      command: ["sh","-c"]
+      args: ["echo trying to run"]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi

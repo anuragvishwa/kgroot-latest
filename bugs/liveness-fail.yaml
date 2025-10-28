@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: liveness-fail
+  namespace: buglab
+  labels:
+    app: bug-liveness
+    scenario: livenessfail
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bug-liveness
+  template:
+    metadata:
+      labels:
+        app: bug-liveness
+        scenario: livenessfail
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080 # wrong port to trigger Unhealthy
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

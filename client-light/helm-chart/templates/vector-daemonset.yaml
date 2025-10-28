@@ -31,7 +31,117 @@ data:
     source = '''
     .client_id = "{{ .Values.client.id }}"
     .event_time = now()
+    .etype = "k8s.log"
+
+    # Extract pod info safely (use ?? for fallback instead of !)
+    pod_uid = string(.kubernetes.pod_uid) ?? ""
+    pod_ns = string(.kubernetes.pod_namespace) ?? "default"
+    pod_name = string(.kubernetes.pod_name) ?? "unknown"
+
+    # Create subject with uid
+    .subject = {
+      "kind": "Pod",
+      "uid": pod_uid,
+      "ns": pod_ns,
+      "name": pod_name
+    }
+
+    # Keep pod_uid for backward compatibility
+    .pod_uid = pod_uid
+    .pod_namespace = pod_ns
+    .pod_name = pod_name
+
+    # Create message key with client_id prefix
+    .message_key = "{{ .Values.client.id }}::" + pod_uid
     '''
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Sources - Alertmanager Webhook (optional)
+    # ─────────────────────────────────────────────────────────────────────────
+    {{- if .Values.alertsWebhook.enabled }}
+    [sources.alertmanager_webhook]
+    type = "http_server"
+    address = "0.0.0.0:{{ .Values.alertsWebhook.port }}"
+    decoding.codec = "json"
+
+    # Add fingerprint/key for raw alerts (before exploding)
+    [transforms.prom_alerts_raw_key]
+    type   = "remap"
+    inputs = ["alertmanager_webhook"]
+    source = '''
+    # Use groupKey or externalURL as message key for partitioning
+    key = string(.groupKey) ?? string(.externalURL) ?? uuid_v4()
+    client_id = get_env_var("CLIENT_ID") ?? "{{ .Values.client.id }}"
+    .message_key = client_id + "::" + key
+    '''
+
+    # Explode/unwrap Alertmanager payloads into single alerts
+    [transforms.prom_alerts_explode]
+    type   = "remap"
+    inputs = ["prom_alerts_raw_key"]
+    source = '''
+    if is_array(.alerts) {
+      . = unnest!(.alerts)
+    } else if is_object(.alerts) {
+      . = .alerts
+    }
+    '''
+
+    # Normalize Prometheus alerts
+    [transforms.prom_alerts_norm]
+    type   = "remap"
+    inputs = ["prom_alerts_explode"]
+    source = '''
+    .event_id   = uuid_v4()
+    .event_time = to_string(now())
+    .etype      = "prom.alert"
+
+    if !is_object(.labels) { .labels = {} }
+    if !is_object(.annotations) { .annotations = {} }
+
+    # alertname (reason)
+    alertname, _ = to_string(.labels.alertname)
+    if is_null(alertname) || alertname == "" { alertname, _ = to_string(.commonLabels.alertname) }
+    if is_null(alertname) || alertname == "" { alertname = "UNKNOWN" }
+    .reason = alertname
+
+    # status
+    st, _ = to_string(.status)
+    if is_null(st) || st == "" { st = "firing" }
+    .status = st
+
+    # severity
+    sev, _ = to_string(.labels.severity)
+    if is_null(sev) || sev == "" { sev, _ = to_string(.commonLabels.severity) }
+    if is_null(sev) || sev == "" { sev = "WARNING" }
+    .severity = upcase(sev)
+
+    # message
+    msg, _ = to_string(.annotations.summary)
+    if is_null(msg) || msg == "" { msg, _ = to_string(.annotations.description) }
+    if is_null(msg) { msg = "" }
+    .message = msg
+
+    # subject (ns/name/kind)
+    ns, _ = to_string(.labels.namespace)
+    if is_null(ns) { ns = "" }
+
+    pod, _ = to_string(.labels.pod)
+    if is_null(pod) { pod = "" }
+
+    svc, _ = to_string(.labels.service)
+    if is_null(svc) || svc == "" { svc, _ = to_string(.labels.job) }
+    if is_null(svc) { svc = "" }
+
+    kind = if pod != "" { "Pod" } else { "Service" }
+    name = if pod != "" { pod } else { svc }
+    .subject = { "kind": kind, "ns": ns, "name": name }
+
+    # carry through labels/annotations
+    .labels = .labels
+    .annotations = .annotations
+    '''
+    {{- end }}
 
     # ─────────────────────────────────────────────────────────────────────────
     # Sinks - Kafka Output
@@ -44,6 +154,8 @@ data:
     {{- $topicLogs := default $defaultLogs .Values.vector.kafkaTopic }}
     topic = "{{ $topicLogs }}"
     compression = "gzip"
+    # Use client_id-prefixed message key for multi-tenant partitioning
+    key_field = "message_key"
 
     [sinks.kafka.encoding]
     codec = "json"
@@ -55,6 +167,68 @@ data:
     mechanism = "{{ .Values.client.kafka.sasl.mechanism }}"
     username = "${KAFKA_SASL_USERNAME}"
     password = "${KAFKA_SASL_PASSWORD}"
+    {{- end }}
+
+    {{- if .Values.vector.rawLogsTopic }}
+    # Optional raw logs mirror (high-volume)
+    [sinks.kafka_raw_logs]
+    type = "kafka"
+    inputs = ["kubernetes_logs"]
+    bootstrap_servers = "{{ .Values.client.kafka.brokers }}"
+    topic = "{{ .Values.vector.rawLogsTopic }}"
+    compression = "gzip"
+    [sinks.kafka_raw_logs.encoding]
+    codec = "json"
+    {{- if .Values.client.kafka.sasl.enabled }}
+    [sinks.kafka_raw_logs.sasl]
+    enabled = true
+    mechanism = "{{ .Values.client.kafka.sasl.mechanism }}"
+    username = "${{`{`}}KAFKA_SASL_USERNAME{{`}`}}"
+    password = "${{`{`}}KAFKA_SASL_PASSWORD{{`}`}}"
+    {{- end }}
+    {{- end }}
+
+    {{- if .Values.alertsWebhook.enabled }}
+    # Forward normalized Prometheus alerts into events.normalized (consumed by enricher)
+    [sinks.kafka_prom_alerts_norm]
+    type = "kafka"
+    inputs = ["prom_alerts_norm"]
+    bootstrap_servers = "{{ .Values.client.kafka.brokers }}"
+    {{- $defaultEvents := printf "events.normalized" }}
+    {{- $topicEvents := default $defaultEvents .Values.eventExporter.kafkaTopic }}
+    topic = "{{ $topicEvents }}"
+    compression = "gzip"
+    # Partition alerts per tenant + alert key
+    key_field = "message_key"
+    [sinks.kafka_prom_alerts_norm.encoding]
+    codec = "json"
+    {{- if .Values.client.kafka.sasl.enabled }}
+    [sinks.kafka_prom_alerts_norm.sasl]
+    enabled = true
+    mechanism = "{{ .Values.client.kafka.sasl.mechanism }}"
+    username = "${{`{`}}KAFKA_SASL_USERNAME{{`}`}}"
+    password = "${{`{`}}KAFKA_SASL_PASSWORD{{`}`}}"
+    {{- end }}
+
+    # Optional: also store raw Alertmanager payloads into raw.prom.alerts
+    {{- $topicRaw := default "raw.prom.alerts" .Values.alertsWebhook.rawTopic }}
+    [sinks.kafka_raw_prom_alerts]
+    type = "kafka"
+    inputs = ["prom_alerts_raw_key"]
+    bootstrap_servers = "{{ .Values.client.kafka.brokers }}"
+    topic = "{{ $topicRaw }}"
+    compression = "gzip"
+    # Use groupKey/externalURL as message key for partitioning
+    key_field = "message_key"
+    [sinks.kafka_raw_prom_alerts.encoding]
+    codec = "json"
+    {{- if .Values.client.kafka.sasl.enabled }}
+    [sinks.kafka_raw_prom_alerts.sasl]
+    enabled = true
+    mechanism = "{{ .Values.client.kafka.sasl.mechanism }}"
+    username = "${{`{`}}KAFKA_SASL_USERNAME{{`}`}}"
+    password = "${{`{`}}KAFKA_SASL_PASSWORD{{`}`}}"
+    {{- end }}
     {{- end }}
 
 ---

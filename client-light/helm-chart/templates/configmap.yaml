@@ -33,7 +33,8 @@ data:
   {{- $topicLogs := default "logs.normalized" .Values.vector.kafkaTopic -}}
   {{- $topicEvents := default "events.normalized" .Values.eventExporter.kafkaTopic -}}
   {{- $topicAlertsRaw := default "alerts.raw" .Values.alertReceiver.kafkaTopic -}}
-  {{- $topicAlertsEnriched := default "alerts.enriched" .Values.alertReceiver.kafkaTopicEnriched -}}
+  {{- $topicAlertsEnriched := default "alerts.enriched" .Values.alertReceiver.kafkaTopicEnriched }}
+
   TOPIC_STATE: {{ $topicState | quote }}
   TOPIC_TOPO: {{ $topicTopo | quote }}
   TOPIC_PROM_TARGETS: {{ $topicPromTargets | quote }}
@@ -45,7 +46,7 @@ data:
   KAFKA_TOPIC_ALERTS_OUTPUT: {{ $topicAlertsEnriched | quote }}
 
   # Optional services
-  PROM_URL: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+  PROM_URL: {{ default "http://kube-prometheus-stack-prometheus.monitoring.svc:9090" .Values.stateWatcher.prometheusUrl | quote }}
 
   # Leader election (for state-watcher)
   LEASE_NAMESPACE: {{ .Release.Namespace | quote }}

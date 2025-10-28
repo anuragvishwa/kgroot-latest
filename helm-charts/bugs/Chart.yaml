@@ -1,0 +1,17 @@
+apiVersion: v2
+name: bugs
+description: Kubernetes bug scenarios for RCA testing - comprehensive production-like failures
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - kubernetes
+  - testing
+  - rca
+  - bugs
+  - troubleshooting
+maintainers:
+  - name: Anurag Vishwakarma
+home: https://github.com/anuragvishwa/kgroot-latest
+sources:
+  - https://github.com/anuragvishwa/kgroot-latest

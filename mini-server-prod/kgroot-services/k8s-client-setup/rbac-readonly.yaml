@@ -1,0 +1,173 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# KGroot RCA - Read-Only Access for Remote Monitoring
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# This manifest creates a ServiceAccount with minimal read-only permissions
+# for KGroot RCA to monitor your Kubernetes cluster remotely.
+#
+# What it does:
+# ✅ Creates a ServiceAccount for external monitoring
+# ✅ Grants read-only access to events, pods, nodes, deployments, services
+# ✅ NO write/delete permissions - completely safe
+# ✅ Can be applied cluster-wide or namespace-specific
+#
+# Usage:
+# 1. Client applies this manifest: kubectl apply -f rbac-readonly.yaml
+# 2. Client generates kubeconfig: ./generate-kubeconfig.sh
+# 3. Client sends you the kubeconfig file securely
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kgroot-monitoring
+  labels:
+    name: kgroot-monitoring
+    purpose: external-rca-monitoring
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kgroot-readonly
+  namespace: kgroot-monitoring
+  labels:
+    app: kgroot-rca
+    component: monitoring
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kgroot-readonly-role
+  labels:
+    app: kgroot-rca
+    component: monitoring
+rules:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Events - Core RCA requirement
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: ["", "events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Pods - Monitor pod lifecycle and status
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: [""]
+    resources: ["pods", "pods/status", "pods/log"]
+    verbs: ["get", "list", "watch"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Nodes - Cluster topology and resource metrics
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/status"]
+    verbs: ["get", "list", "watch"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Workloads - Deployment, ReplicaSet, StatefulSet, DaemonSet
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: ["apps"]
+    resources:
+      - "deployments"
+      - "deployments/status"
+      - "replicasets"
+      - "replicasets/status"
+      - "statefulsets"
+      - "statefulsets/status"
+      - "daemonsets"
+      - "daemonsets/status"
+    verbs: ["get", "list", "watch"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Services - Network topology
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # ConfigMaps & Secrets (metadata only, no secret values)
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Namespaces - Cluster structure
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Ingress - Network access patterns
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "ingresses/status"]
+    verbs: ["get", "list", "watch"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PersistentVolumes - Storage issues
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: [""]
+    resources:
+      - "persistentvolumes"
+      - "persistentvolumeclaims"
+      - "persistentvolumeclaims/status"
+    verbs: ["get", "list", "watch"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Jobs & CronJobs - Batch workloads
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: ["batch"]
+    resources:
+      - "jobs"
+      - "jobs/status"
+      - "cronjobs"
+      - "cronjobs/status"
+    verbs: ["get", "list", "watch"]
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # HPA - Autoscaling events
+  # ─────────────────────────────────────────────────────────────────────────
+  - apiGroups: ["autoscaling"]
+    resources:
+      - "horizontalpodautoscalers"
+      - "horizontalpodautoscalers/status"
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kgroot-readonly-binding
+  labels:
+    app: kgroot-rca
+    component: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kgroot-readonly-role
+subjects:
+  - kind: ServiceAccount
+    name: kgroot-readonly
+    namespace: kgroot-monitoring
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# Optional: Token Secret (for long-lived tokens)
+# ═══════════════════════════════════════════════════════════════════════════
+# Note: Kubernetes 1.24+ requires explicit token creation
+# The generate-kubeconfig.sh script will handle this automatically
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kgroot-readonly-token
+  namespace: kgroot-monitoring
+  annotations:
+    kubernetes.io/service-account.name: kgroot-readonly
+type: kubernetes.io/service-account-token

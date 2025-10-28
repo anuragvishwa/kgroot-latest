@@ -2,8 +2,8 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 1.0.4
-appVersion: "1.0.3"
+version: 2.1.2
+appVersion: "2.1.0"
 keywords:
   - knowledge-graph
   - rca
@@ -38,31 +38,29 @@ annotations:
     - name: Website
       url: https://lumniverse.com
   artifacthub.io/changes: |
-    - kind: added
-      description: Initial production release of KG RCA Agent
-    - kind: added
-      description: Kubernetes event collection with real-time streaming
-    - kind: added
-      description: Pod log aggregation with Vector
-    - kind: added
-      description: SSL/TLS support for secure Kafka communication
-    - kind: added
-      description: Configurable resource limits and requests
-    - kind: added
-      description: RBAC with minimal required permissions
-    - kind: added
-      description: Multi-namespace and cluster-wide monitoring support
+    - kind: changed
+      description: Replaced heavy Kafka image with minimal kafka-producer-minimal (90% size reduction)
+    - kind: improved
+      description: Faster deployment with lightweight registry and deregister jobs
     - kind: fixed
-      description: Fix Vector DaemonSet crash by setting self_node_name and VECTOR_SELF_NODE_NAME; add RBAC to list namespaces
-    - kind: fixed
-      description: RBAC: grant apps/batch/events.k8s.io/discovery.k8s.io for state-watcher + events exporter; topic defaults aligned to server
+      description: Fixed values.yaml structure - moved kafka config back under client
+    - kind: added
+      description: Control plane architecture with dynamic consumer spawning
+    - kind: added
+      description: Cluster registration via cluster.registry Kafka topic
+    - kind: added
+      description: Heartbeat monitoring via cluster.heartbeat Kafka topic
+    - kind: added
+      description: Auto-cleanup of dead clusters after 5 minutes no heartbeat
+    - kind: changed
+      description: Zero-touch operations - helm install auto-spawns graph-builder, helm delete auto-cleans up
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/signKey: |
     fingerprint: # Add GPG key fingerprint if signing releases
     url: # Add GPG public key URL if signing releases
   artifacthub.io/images: |
     - name: alert-receiver
-      image: anuragvishwa/kg-alert-receiver:1.0.2
+      image: anuragvishwa/kg-alert-receiver:1.0.18
     - name: state-watcher
       image: anuragvishwa/kg-state-watcher:1.0.2
     - name: event-exporter
@@ -71,3 +69,5 @@ annotations:
       image: timberio/vector:0.34.0-alpine
     - name: prometheus
       image: prom/prometheus:latest
+    - name: kafka-producer-minimal
+      image: anuragvishwa/kafka-producer-minimal:1.0.0
