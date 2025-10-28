@@ -88,6 +88,42 @@ The script will:
 3. Update the Helm repository index
 4. Commit and push to gh-pages branch
 
+**If the push is rejected (`non-fast-forward`)**
+
+```bash
+cd ../gh-pages-content
+git fetch origin gh-pages
+git pull --rebase origin gh-pages   # resolve any conflicts, then re-run the script
+```
+
+**Manual push checklist (script does this automatically)**
+
+```bash
+# Ensure the latest package is present
+cp ../client-light/kg-rca-agent-<version>.tgz .
+
+# Merge the new entry into the existing index
+helm repo index . \
+  --url https://anuragvishwa.github.io/kgroot-latest/ \
+  --merge index.yaml
+
+# Commit and push
+git add kg-rca-agent-<version>.tgz index.yaml
+git commit -m "chore: publish Helm chart v<version>"
+git push origin gh-pages
+```
+
+**Verify the publication**
+
+```bash
+curl https://anuragvishwa.github.io/kgroot-latest/index.yaml | grep "<version>"
+curl -I https://anuragvishwa.github.io/kgroot-latest/kg-rca-agent-<version>.tgz
+helm repo remove anuragvishwa
+helm repo add anuragvishwa https://anuragvishwa.github.io/kgroot-latest/
+helm repo update
+helm search repo anuragvishwa/kg-rca-agent -l
+```
+
 ### Publishing Checklist
 
 Before publishing a new version:

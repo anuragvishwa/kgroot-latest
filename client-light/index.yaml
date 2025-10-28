@@ -4,6 +4,84 @@ entries:
   - annotations:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
+        - kind: changed
+          description: Replaced heavy Kafka image with minimal kafka-producer-minimal (90% size reduction)
+        - kind: improved
+          description: Faster deployment with lightweight registry and deregister jobs
+        - kind: fixed
+          description: Fixed values.yaml structure - moved kafka config back under client
+        - kind: added
+          description: Control plane architecture with dynamic consumer spawning
+        - kind: added
+          description: Cluster registration via cluster.registry Kafka topic
+        - kind: added
+          description: Heartbeat monitoring via cluster.heartbeat Kafka topic
+        - kind: added
+          description: Auto-cleanup of dead clusters after 5 minutes no heartbeat
+        - kind: changed
+          description: Zero-touch operations - helm install auto-spawns graph-builder, helm delete auto-cleans up
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/displayName: KG RCA Agent by Lumniverse
+      artifacthub.io/images: |
+        - name: alert-receiver
+          image: anuragvishwa/kg-alert-receiver:1.0.18
+        - name: state-watcher
+          image: anuragvishwa/kg-state-watcher:1.0.2
+        - name: event-exporter
+          image: opsgenie/kubernetes-event-exporter:v1.4
+        - name: vector
+          image: timberio/vector:0.34.0-alpine
+        - name: prometheus
+          image: prom/prometheus:latest
+        - name: kafka-producer-minimal
+          image: anuragvishwa/kafka-producer-minimal:1.0.0
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://github.com/anuragvishwa/kgroot-latest/blob/main/README.md
+        - name: Support
+          url: https://github.com/anuragvishwa/kgroot-latest/issues
+        - name: Website
+          url: https://lumniverse.com
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/recommendations: |
+        - url: https://kafka.apache.org/
+      artifacthub.io/signKey: |
+        fingerprint: # Add GPG key fingerprint if signing releases
+        url: # Add GPG public key URL if signing releases
+    apiVersion: v2
+    appVersion: 2.1.0
+    created: "2025-10-28T14:05:03.354677+05:30"
+    description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
+      observability and root cause analysis
+    digest: 8db1f95abf2676f1322e3c98fdec3cf47b730113d303a1b34d0b3502faf90b03
+    home: https://github.com/anuragvishwa/kgroot-latest
+    icon: https://raw.githubusercontent.com/anuragvishwa/kgroot-latest/main/assets/logo.png
+    keywords:
+    - knowledge-graph
+    - rca
+    - observability
+    - agent
+    - monitoring
+    - kubernetes
+    - troubleshooting
+    - root-cause-analysis
+    - lumniverse
+    maintainers:
+    - email: support@lumniverse.com
+      name: Lumniverse
+      url: https://github.com/anuragvishwa
+    name: kg-rca-agent
+    sources:
+    - https://github.com/anuragvishwa/kgroot-latest
+    type: application
+    urls:
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-2.1.2.tgz
+    version: 2.1.2
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
         - kind: fixed
           description: Fixed values.yaml structure - moved kafka config back under client
         - kind: added
@@ -46,7 +124,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-27T13:22:22.377853+05:30"
+    created: "2025-10-28T14:05:03.353223+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
@@ -71,7 +149,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-2.1.1.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-2.1.1.tgz
     version: 2.1.1
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -118,7 +196,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-27T13:22:22.376683+05:30"
+    created: "2025-10-28T14:05:03.352097+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 76301c37bc4d6218f94eacb655e512a8c06d169a2163df6148e15bd4188cc2be
@@ -143,7 +221,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-2.1.0.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-2.1.0.tgz
     version: 2.1.0
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -188,7 +266,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.369238+05:30"
+    created: "2025-10-28T14:05:03.34486+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 0c348495c4375051e7d57b11c9b87ea701d044f605ee71927167e331e385cc3d
@@ -213,7 +291,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.13.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.13.tgz
     version: 1.0.13
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -260,7 +338,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.367081+05:30"
+    created: "2025-10-28T14:05:03.343471+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 8bf88c1632879e3b6262c5d471994481e950ba662a178d50841e247bf4948ffd
@@ -285,7 +363,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.12.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.12.tgz
     version: 1.0.12
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -330,7 +408,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.365868+05:30"
+    created: "2025-10-28T14:05:03.34239+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: ac479f937089749bcb8f1d82097c32f5ac3b79ea33a9d8e3fd318c66e3566bb7
@@ -355,7 +433,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.11.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.11.tgz
     version: 1.0.11
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -402,7 +480,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.363931+05:30"
+    created: "2025-10-28T14:05:03.34129+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 1580c076627a9c3b22bd74f98107abcd4a853fe3b59b7a9b23c87e921e425d80
@@ -427,7 +505,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.10.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.10.tgz
     version: 1.0.10
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -490,7 +568,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.375452+05:30"
+    created: "2025-10-28T14:05:03.350941+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: a3423d42bb15ba6e824e969fa8c8b9f8fd34eddf9fea81a4988860c14560e9cf
@@ -515,7 +593,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.9.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.9.tgz
     version: 1.0.9
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -576,7 +654,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.373735+05:30"
+    created: "2025-10-28T14:05:03.34984+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 4fe18121bdd323d526f69a2674bb2ae8782a57fb5bc9fb77410e4c42a12a4b12
@@ -601,7 +679,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.8.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.8.tgz
     version: 1.0.8
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -660,7 +738,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.372543+05:30"
+    created: "2025-10-28T14:05:03.348676+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 274694bd44d0bf998f3960d60a7dd2889377ecfbf268c6ae6e506ff3433417fb
@@ -685,7 +763,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.7.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.7.tgz
     version: 1.0.7
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -738,7 +816,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.37143+05:30"
+    created: "2025-10-28T14:05:03.347652+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 84c83c3a7c628b7984df98237491d079cfc82a20a5cafaa62245517c32fb59a9
@@ -763,7 +841,7 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.6.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.6.tgz
     version: 1.0.6
   - annotations:
       artifacthub.io/category: monitoring-logging
@@ -816,7 +894,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-10-27T13:22:22.370319+05:30"
+    created: "2025-10-28T14:05:03.345732+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 7657a8a426820ea4592c9514739b3041ad65024192c535a1aee01ad12d9864ac
@@ -841,6 +919,6 @@ entries:
     - https://github.com/anuragvishwa/kgroot-latest
     type: application
     urls:
-    - https://github.com/anuragvishwa/kgroot-latest/raw/refs/heads/feature/kgroot-implementation/client-light/kg-rca-agent-1.0.5.tgz
+    - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-1.0.5.tgz
     version: 1.0.5
-generated: "2025-10-27T13:22:22.362285+05:30"
+generated: "2025-10-28T14:05:03.339351+05:30"

@@ -2,7 +2,7 @@ apiVersion: v2
 name: kg-rca-agent
 description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes observability and root cause analysis
 type: application
-version: 2.1.1
+version: 2.1.2
 appVersion: "2.1.0"
 keywords:
   - knowledge-graph
@@ -38,6 +38,10 @@ annotations:
     - name: Website
       url: https://lumniverse.com
   artifacthub.io/changes: |
+    - kind: changed
+      description: Replaced heavy Kafka image with minimal kafka-producer-minimal (90% size reduction)
+    - kind: improved
+      description: Faster deployment with lightweight registry and deregister jobs
     - kind: fixed
       description: Fixed values.yaml structure - moved kafka config back under client
     - kind: added
@@ -65,3 +69,5 @@ annotations:
       image: timberio/vector:0.34.0-alpine
     - name: prometheus
       image: prom/prometheus:latest
+    - name: kafka-producer-minimal
+      image: anuragvishwa/kafka-producer-minimal:1.0.0

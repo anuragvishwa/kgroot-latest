@@ -14,7 +14,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: register
-        image: confluentinc/cp-kafka:7.5.0
+        image: anuragvishwa/kafka-producer-minimal:1.0.0
         command:
           - /bin/sh
           - -c
