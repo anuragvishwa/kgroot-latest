@@ -85,13 +85,16 @@ class Neo4jService:
         self,
         event_id: str,
         client_id: str,
-        max_hops: int = 3
+        max_hops: int = 10
     ) -> List[Dict[str, Any]]:
         """
         Find causal chain leading to a specific event
         """
         query = """
-        MATCH path = (root:Episodic {client_id: $client_id})-[pc:POTENTIAL_CAUSE*1..$max_hops {client_id: $client_id}]->(target:Episodic {eid: $event_id, client_id: $client_id})
+        MATCH path = (root:Episodic {client_id: $client_id})-[pc:POTENTIAL_CAUSE*1..10]->(target:Episodic {eid: $event_id, client_id: $client_id})
+        WHERE all(rel in relationships(path) WHERE rel.client_id = $client_id)
+          AND all(n in nodes(path) WHERE n.client_id = $client_id)
+          AND length(path) <= $max_hops
 
         WITH
           root,
