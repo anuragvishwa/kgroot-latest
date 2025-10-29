@@ -41,20 +41,9 @@ async def lifespan(app: FastAPI):
 
         logger.info("All services initialized successfully")
 
-        # Build initial embedding index
-        logger.info("Building initial embedding index...")
-        events = neo4j_service.find_events_by_criteria(
-            client_id=settings.default_client_id,
-            time_range_hours=24,
-            limit=1000
-        )
-        resources = neo4j_service.get_resources_catalog(
-            client_id=settings.default_client_id,
-            limit=1000
-        )["resources"]
-
-        embedding_service.rebuild_index(events, resources)
-        logger.info(f"Built embedding index with {len(events)} events and {len(resources)} resources")
+        # Skip initial embedding build to avoid blocking startup
+        # Embeddings will be built on-demand when first search is requested
+        logger.info("Skipping initial embedding index build (will build on-demand)")
 
     except Exception as e:
         logger.error(f"Failed to initialize services: {e}")
