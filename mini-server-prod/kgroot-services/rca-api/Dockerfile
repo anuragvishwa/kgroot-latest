@@ -27,7 +27,6 @@ COPY --from=builder /root/.local /root/.local
 
 # Copy application code
 COPY src/ ./src/
-COPY .env.example ./.env.example
 
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
