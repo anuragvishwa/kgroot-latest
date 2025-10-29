@@ -413,7 +413,13 @@ class Neo4jService:
         with self.driver.session() as session:
             result = session.run(query, client_id=client_id)
             record = result.single()
-            return dict(record) if record else {}
+            if record:
+                data = dict(record)
+                # Convert Neo4j DateTime to Python datetime
+                if 'timestamp' in data and data['timestamp']:
+                    data['timestamp'] = data['timestamp'].to_native()
+                return data
+            return {}
 
     def get_cross_service_failures(
         self,
