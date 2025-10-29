@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  kg-rca-api-v2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kg-rca-api-v2
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      # Neo4j Configuration
+      NEO4J_URI: bolt://kg-neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+
+      # OpenAI Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: gpt-4-turbo
+      OPENAI_REASONING_EFFORT: medium
+      OPENAI_VERBOSITY: medium
+
+      # Embeddings Configuration
+      EMBEDDING_MODEL: all-MiniLM-L6-v2
+      EMBEDDING_CACHE_DIR: /app/embeddings_cache
+
+      # Slack Configuration (optional)
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_CHANNEL_ALERTS: ${SLACK_CHANNEL_ALERTS:-#alerts}
+
+      # API Configuration
+      API_HOST: 0.0.0.0
+      API_PORT: 8083
+      API_WORKERS: 1
+      DEBUG: false
+
+      # Multi-tenancy
+      DEFAULT_CLIENT_ID: ab-01
+      ENABLE_CLIENT_ISOLATION: true
+
+    volumes:
+      - ./embeddings_cache:/app/embeddings_cache
+      - ./logs:/app/logs
+
+    networks:
+      - kg-network
+
+    depends_on:
+      - kg-neo4j
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  kg-network:
+    external: true

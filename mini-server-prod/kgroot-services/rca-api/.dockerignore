@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Cache
+embeddings_cache/
+.cache/
+
+# Environment
+.env
+
+# Git
+.git/
+.gitignore
+
+# Documentation (already in image)
+docs/
+*.md
+!README.md
+
+# Test files
+tests/
+*.test.py
+
+# OS
+.DS_Store
+Thumbs.db
