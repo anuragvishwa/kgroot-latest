@@ -1,0 +1,588 @@
+{
+  "info": {
+    "name": "KGRoot RCA API",
+    "description": "Complete collection for KGRoot RCA API endpoints with examples",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "kgroot-rca-api"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8083",
+      "type": "string"
+    },
+    {
+      "key": "client_id",
+      "value": "ab-01",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "RCA Analysis",
+      "item": [
+        {
+          "name": "Analyze RCA (Medium Reasoning)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Why did nginx pods fail in the production namespace?\",\n  \"client_id\": \"{{client_id}}\",\n  \"time_range_hours\": 24,\n  \"reasoning_effort\": \"medium\",\n  \"verbosity\": \"medium\",\n  \"include_remediation\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rca/analyze",
+              "host": ["{{base_url}}"],
+              "path": ["rca", "analyze"]
+            },
+            "description": "Perform intelligent RCA analysis using GPT-5 with medium reasoning effort"
+          }
+        },
+        {
+          "name": "Analyze RCA (Quick - Low Reasoning)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"What failures happened in the last hour?\",\n  \"client_id\": \"{{client_id}}\",\n  \"time_range_hours\": 1,\n  \"reasoning_effort\": \"low\",\n  \"verbosity\": \"low\",\n  \"include_remediation\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rca/analyze",
+              "host": ["{{base_url}}"],
+              "path": ["rca", "analyze"]
+            },
+            "description": "Quick RCA analysis with low reasoning effort (~1.5s)"
+          }
+        },
+        {
+          "name": "Analyze RCA (Deep - High Reasoning)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Complete analysis of production outage affecting payment service\",\n  \"client_id\": \"{{client_id}}\",\n  \"time_range_hours\": 24,\n  \"reasoning_effort\": \"high\",\n  \"verbosity\": \"high\",\n  \"include_remediation\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rca/analyze",
+              "host": ["{{base_url}}"],
+              "path": ["rca", "analyze"]
+            },
+            "description": "Deep RCA analysis with high reasoning effort for critical issues"
+          }
+        },
+        {
+          "name": "Get Root Causes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/rca/root-causes/{{client_id}}?time_range_hours=24&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["rca", "root-causes", "{{client_id}}"],
+              "query": [
+                {
+                  "key": "time_range_hours",
+                  "value": "24"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Get likely root causes (events with no upstream causes)"
+          }
+        },
+        {
+          "name": "Get Causal Chain",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/rca/causal-chain/evt-12345?max_depth=10",
+              "host": ["{{base_url}}"],
+              "path": ["rca", "causal-chain", "evt-12345"],
+              "query": [
+                {
+                  "key": "max_depth",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Get causal chain leading to specific event"
+          }
+        },
+        {
+          "name": "Get Blast Radius",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/rca/blast-radius/evt-11111?max_depth=5",
+              "host": ["{{base_url}}"],
+              "path": ["rca", "blast-radius", "evt-11111"],
+              "query": [
+                {
+                  "key": "max_depth",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Get all events affected by root cause"
+          }
+        },
+        {
+          "name": "Get Cross-Service Failures",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/rca/cross-service-failures/{{client_id}}?time_range_hours=24&min_confidence=0.7",
+              "host": ["{{base_url}}"],
+              "path": ["rca", "cross-service-failures", "{{client_id}}"],
+              "query": [
+                {
+                  "key": "time_range_hours",
+                  "value": "24"
+                },
+                {
+                  "key": "min_confidence",
+                  "value": "0.7"
+                }
+              ]
+            },
+            "description": "Get cross-service failures detected via topology"
+          }
+        },
+        {
+          "name": "Generate Runbook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"failure_pattern\": \"OOMKilled pod restarts in Java applications\",\n  \"resource_type\": \"Pod\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rca/runbook",
+              "host": ["{{base_url}}"],
+              "path": ["rca", "runbook"]
+            },
+            "description": "Generate runbook for specific failure pattern"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Semantic Search - OOM Errors",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"show me all OOM errors in production namespace last 6 hours\",\n  \"client_id\": \"{{client_id}}\",\n  \"time_range_hours\": 6,\n  \"namespaces\": [\"production\"],\n  \"limit\": 20\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/search/",
+              "host": ["{{base_url}}"],
+              "path": ["search", ""]
+            },
+            "description": "Natural language search for OOM errors"
+          }
+        },
+        {
+          "name": "Search by Owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"find all pods owned by team-backend that failed\",\n  \"client_id\": \"{{client_id}}\",\n  \"resource_types\": [\"Pod\"],\n  \"limit\": 50\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/search/",
+              "host": ["{{base_url}}"],
+              "path": ["search", ""]
+            },
+            "description": "Search resources by owner/team"
+          }
+        },
+        {
+          "name": "Temporal Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"what happened to the auth service between 10am and 11am\",\n  \"client_id\": \"{{client_id}}\",\n  \"time_range_hours\": 2,\n  \"limit\": 100\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/search/",
+              "host": ["{{base_url}}"],
+              "path": ["search", ""]
+            },
+            "description": "Search events in specific time range"
+          }
+        },
+        {
+          "name": "Rebuild Search Index",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/search/rebuild-index/{{client_id}}?time_range_hours=720",
+              "host": ["{{base_url}}"],
+              "path": ["search", "rebuild-index", "{{client_id}}"],
+              "query": [
+                {
+                  "key": "time_range_hours",
+                  "value": "720"
+                }
+              ]
+            },
+            "description": "Rebuild embedding index (30 days of data)"
+          }
+        },
+        {
+          "name": "Get Search Suggestions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/search/suggestions?client_id={{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["search", "suggestions"],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Get search query suggestions"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog",
+      "item": [
+        {
+          "name": "Browse All Resources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/resources/{{client_id}}?page=1&page_size=50",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "resources", "{{client_id}}"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Browse all resources with pagination"
+          }
+        },
+        {
+          "name": "Filter Resources by Namespace and Kind",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/resources/{{client_id}}?namespaces=production&kinds=Pod&kinds=Deployment&page=1&page_size=50",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "resources", "{{client_id}}"],
+              "query": [
+                {
+                  "key": "namespaces",
+                  "value": "production"
+                },
+                {
+                  "key": "kinds",
+                  "value": "Pod"
+                },
+                {
+                  "key": "kinds",
+                  "value": "Deployment"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Filter resources by namespace and kind"
+          }
+        },
+        {
+          "name": "Get Healthy Resources Only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/resources/{{client_id}}?healthy_only=true",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "resources", "{{client_id}}"],
+              "query": [
+                {
+                  "key": "healthy_only",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Get only healthy resources"
+          }
+        },
+        {
+          "name": "Get Service Topology",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/topology/{{client_id}}/production/nginx-service?resource_kind=Service",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "topology", "{{client_id}}", "production", "nginx-service"],
+              "query": [
+                {
+                  "key": "resource_kind",
+                  "value": "Service"
+                }
+              ]
+            },
+            "description": "Get topology view for a service"
+          }
+        },
+        {
+          "name": "List Resource Owners",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/owners/{{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "owners", "{{client_id}}"]
+            },
+            "description": "Get list of resource owners/teams"
+          }
+        },
+        {
+          "name": "List Namespaces",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/namespaces/{{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "namespaces", "{{client_id}}"]
+            },
+            "description": "Get list of namespaces with resource counts"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Get Health Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/status/{{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["health", "status", "{{client_id}}"]
+            },
+            "description": "Get real-time cluster health status"
+          }
+        },
+        {
+          "name": "Send Health Report to Slack",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/send-health-report/{{client_id}}?channel=%23health-reports",
+              "host": ["{{base_url}}"],
+              "path": ["health", "send-health-report", "{{client_id}}"],
+              "query": [
+                {
+                  "key": "channel",
+                  "value": "%23health-reports"
+                }
+              ]
+            },
+            "description": "Send health status report to Slack channel"
+          }
+        },
+        {
+          "name": "Get Active Incidents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/incidents/{{client_id}}?min_severity=medium",
+              "host": ["{{base_url}}"],
+              "path": ["health", "incidents", "{{client_id}}"],
+              "query": [
+                {
+                  "key": "min_severity",
+                  "value": "medium"
+                }
+              ]
+            },
+            "description": "Get active incidents with minimum severity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat Assistant",
+      "item": [
+        {
+          "name": "Chat - Ask Question",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What is causing high memory usage in the auth service?\",\n  \"client_id\": \"{{client_id}}\",\n  \"reasoning_effort\": \"low\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chat/",
+              "host": ["{{base_url}}"],
+              "path": ["chat", ""]
+            },
+            "description": "Chat with AI assistant about infrastructure"
+          }
+        },
+        {
+          "name": "Chat - Continued Conversation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Tell me more about the OOM errors\",\n  \"client_id\": \"{{client_id}}\",\n  \"conversation_id\": \"conv-12345\",\n  \"reasoning_effort\": \"low\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chat/",
+              "host": ["{{base_url}}"],
+              "path": ["chat", ""]
+            },
+            "description": "Continue multi-turn conversation"
+          }
+        },
+        {
+          "name": "Chat - With Event Context",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Explain this failure in detail\",\n  \"client_id\": \"{{client_id}}\",\n  \"context_events\": [\"evt-11111\", \"evt-11112\"],\n  \"reasoning_effort\": \"medium\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chat/",
+              "host": ["{{base_url}}"],
+              "path": ["chat", ""]
+            },
+            "description": "Chat with specific event context"
+          }
+        },
+        {
+          "name": "Get Conversation History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/chat/conversations/conv-12345",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "conversations", "conv-12345"]
+            },
+            "description": "Get conversation history"
+          }
+        },
+        {
+          "name": "Clear Conversation",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/chat/conversations/conv-12345",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "conversations", "conv-12345"]
+            },
+            "description": "Clear conversation history"
+          }
+        }
+      ]
+    }
+  ]
+}
