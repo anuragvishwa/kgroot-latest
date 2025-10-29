@@ -2,6 +2,7 @@
 Chat/Conversational assistant API endpoints
 """
 from fastapi import APIRouter, HTTPException
+from typing import List, Dict, Any, Optional
 import uuid
 import logging
 
