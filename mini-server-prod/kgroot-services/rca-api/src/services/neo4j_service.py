@@ -369,8 +369,14 @@ class Neo4jService:
         // Count resources by health status
         MATCH (r:Resource {client_id: $client_id})
         WITH
-          count(CASE WHEN r.status IN ['Running', 'Active', 'Healthy'] THEN 1 END) as healthy,
-          count(CASE WHEN r.status NOT IN ['Running', 'Active', 'Healthy'] THEN 1 END) as unhealthy,
+          count(DISTINCT CASE
+            WHEN r.status IN ['Running', 'Active', 'Healthy', 'Succeeded'] OR r.status IS NULL
+            THEN r
+          END) as healthy_count,
+          count(DISTINCT CASE
+            WHEN r.status IN ['Failed', 'Error', 'CrashLoopBackOff', 'OOMKilled', 'Pending', 'Unknown']
+            THEN r
+          END) as unhealthy_count,
           count(r) as total
 
         // Count active incidents (root causes in last hour)
@@ -396,8 +402,8 @@ class Neo4jService:
         }
 
         RETURN
-          healthy,
-          unhealthy,
+          healthy_count as healthy,
+          unhealthy_count as unhealthy,
           total,
           active_incidents,
           collect({reason: reason, count: count}) as top_issues,

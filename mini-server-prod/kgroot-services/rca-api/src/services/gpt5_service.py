@@ -59,23 +59,42 @@ class GPT5Service:
         )
 
         try:
-            # Call GPT-5 with new Responses API
-            response = self.client.responses.create(
-                model=settings.openai_model,
-                input=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                reasoning={"effort": reasoning_effort},
-                text={"verbosity": verbosity}
-            )
+            # Try GPT-5 Responses API first
+            if hasattr(self.client, 'responses'):
+                response = self.client.responses.create(
+                    model=settings.openai_model,
+                    input=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    reasoning={"effort": reasoning_effort},
+                    text={"verbosity": verbosity}
+                )
+                output_text = response.output_text
+                reasoning_tokens = getattr(response.usage, 'reasoning_tokens', None)
+                total_tokens = getattr(response.usage, 'total_tokens', None)
+            else:
+                # Fallback to Chat Completions API
+                logger.warning("Responses API not available, using Chat Completions API")
+                response = self.client.chat.completions.create(
+                    model="gpt-4-turbo" if "gpt-5" in settings.openai_model else settings.openai_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=2000
+                )
+                output_text = response.choices[0].message.content
+                reasoning_tokens = None
+                total_tokens = response.usage.total_tokens
 
             # Extract summary and remediation
-            result = self._parse_response(response.output_text)
+            result = self._parse_response(output_text)
 
             # Add metadata
-            result["reasoning_tokens"] = getattr(response.usage, 'reasoning_tokens', None)
-            result["total_tokens"] = getattr(response.usage, 'total_tokens', None)
+            result["reasoning_tokens"] = reasoning_tokens
+            result["total_tokens"] = total_tokens
 
             return result
 
