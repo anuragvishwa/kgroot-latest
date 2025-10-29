@@ -52,7 +52,85 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T13:59:53.580522+05:30"
+    created: "2025-10-29T14:26:08.769947+05:30"
+    description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
+      observability and root cause analysis
+    digest: 3db9fdf1d4fa29bd6380368315f2271e2677cc197faee5f569cdb9affdd85ab7
+    home: https://github.com/anuragvishwa/kgroot-latest
+    icon: https://raw.githubusercontent.com/anuragvishwa/kgroot-latest/main/assets/logo.png
+    keywords:
+    - knowledge-graph
+    - rca
+    - observability
+    - agent
+    - monitoring
+    - kubernetes
+    - troubleshooting
+    - root-cause-analysis
+    - lumniverse
+    maintainers:
+    - email: support@lumniverse.com
+      name: Lumniverse
+      url: https://github.com/anuragvishwa
+    name: kg-rca-agent
+    sources:
+    - https://github.com/anuragvishwa/kgroot-latest
+    type: application
+    urls:
+    - https://anuragvishwa.github.io/kgroot-latest/kg-rca-agent-2.1.3.tgz
+    version: 2.1.3
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: changed
+          description: Replaced heavy Kafka image with minimal kafka-producer-minimal (90% size reduction)
+        - kind: improved
+          description: Faster deployment with lightweight registry and deregister jobs
+        - kind: fixed
+          description: Fixed values.yaml structure - moved kafka config back under client
+        - kind: added
+          description: Control plane architecture with dynamic consumer spawning
+        - kind: added
+          description: Cluster registration via cluster.registry Kafka topic
+        - kind: added
+          description: Heartbeat monitoring via cluster.heartbeat Kafka topic
+        - kind: added
+          description: Auto-cleanup of dead clusters after 5 minutes no heartbeat
+        - kind: changed
+          description: Zero-touch operations - helm install auto-spawns graph-builder, helm delete auto-cleans up
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/displayName: KG RCA Agent by Lumniverse
+      artifacthub.io/images: |
+        - name: alert-receiver
+          image: anuragvishwa/kg-alert-receiver:1.0.18
+        - name: state-watcher
+          image: anuragvishwa/kg-state-watcher:1.0.2
+        - name: event-exporter
+          image: opsgenie/kubernetes-event-exporter:v1.4
+        - name: vector
+          image: timberio/vector:0.34.0-alpine
+        - name: prometheus
+          image: prom/prometheus:latest
+        - name: kafka-producer-minimal
+          image: anuragvishwa/kafka-producer-minimal:1.0.0
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://github.com/anuragvishwa/kgroot-latest/blob/main/README.md
+        - name: Support
+          url: https://github.com/anuragvishwa/kgroot-latest/issues
+        - name: Website
+          url: https://lumniverse.com
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/recommendations: |
+        - url: https://kafka.apache.org/
+      artifacthub.io/signKey: |
+        fingerprint: # Add GPG key fingerprint if signing releases
+        url: # Add GPG public key URL if signing releases
+    apiVersion: v2
+    appVersion: 2.1.0
+    created: "2025-10-29T14:26:08.769032+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 234e88fcbb155cb0350c78d9edf7cd6b21c1b5a2d443dd6b078635c58f536ae6
@@ -124,7 +202,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T13:59:53.579185+05:30"
+    created: "2025-10-29T14:26:08.767992+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
@@ -196,7 +274,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T13:59:53.582985+05:30"
+    created: "2025-10-29T14:26:08.772781+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
@@ -268,7 +346,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T13:59:53.581794+05:30"
+    created: "2025-10-29T14:26:08.771475+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 76301c37bc4d6218f94eacb655e512a8c06d169a2163df6148e15bd4188cc2be
@@ -295,4 +373,4 @@ entries:
     urls:
     - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-2.1.0.tgz
     version: 2.1.0
-generated: "2025-10-29T13:59:53.577362+05:30"
+generated: "2025-10-29T14:26:08.766538+05:30"
