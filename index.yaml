@@ -52,7 +52,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T14:26:08.769947+05:30"
+    created: "2025-10-29T15:29:29.072016+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 3db9fdf1d4fa29bd6380368315f2271e2677cc197faee5f569cdb9affdd85ab7
@@ -130,7 +130,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T14:26:08.769032+05:30"
+    created: "2025-10-29T15:29:29.070904+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 234e88fcbb155cb0350c78d9edf7cd6b21c1b5a2d443dd6b078635c58f536ae6
@@ -202,7 +202,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T14:26:08.767992+05:30"
+    created: "2025-10-29T15:29:29.069877+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
@@ -274,7 +274,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T14:26:08.772781+05:30"
+    created: "2025-10-29T15:29:29.074864+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: d5ce8c318931b1c53c7f03326946be3ba880cf5843f3b16c24dd370ebd14edff
@@ -346,7 +346,7 @@ entries:
         url: # Add GPG public key URL if signing releases
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2025-10-29T14:26:08.771475+05:30"
+    created: "2025-10-29T15:29:29.073527+05:30"
     description: Knowledge Graph RCA Agent - Client-side data collectors for Kubernetes
       observability and root cause analysis
     digest: 76301c37bc4d6218f94eacb655e512a8c06d169a2163df6148e15bd4188cc2be
@@ -373,4 +373,4 @@ entries:
     urls:
     - https://anuragvishwa.github.io/kgroot-latest/client-light/kg-rca-agent-2.1.0.tgz
     version: 2.1.0
-generated: "2025-10-29T14:26:08.766538+05:30"
+generated: "2025-10-29T15:29:29.068278+05:30"
