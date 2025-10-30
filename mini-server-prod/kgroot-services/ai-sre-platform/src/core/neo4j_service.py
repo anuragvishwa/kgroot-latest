@@ -32,30 +32,34 @@ class Neo4jService:
         self,
         client_id: str,
         time_range_hours: int = 24,
-        limit: int = 10
+        limit: int = 10,
+        max_upstream_causes: int = 2
     ) -> List[Dict[str, Any]]:
         """
-        Find likely root causes (events with no upstream causes)
+        Find likely root causes using tiered strategy:
 
-        Returns events that:
-        - Have no POTENTIAL_CAUSE relationships pointing TO them
-        - Have POTENTIAL_CAUSE relationships pointing FROM them (caused other events)
-        - Filters out normal log events (LOG_INFO) - only K8s Events
+        1. Primary: Events with 0-2 upstream causes (early in causal chain)
+        2. Fallback: Most impactful failure events if no primary root causes
+
+        Filters out normal events (Pulled, Created, Started, Scheduled, Completed, SuccessfulCreate)
         """
         query = """
         MATCH (e:Episodic {client_id: $client_id})
         WHERE e.event_time > datetime() - duration({hours: $hours})
           AND e.etype = 'k8s.event'
-          AND e.reason <> 'LOG_INFO'
-          AND NOT EXISTS {
-            MATCH (:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE {client_id: $client_id}]->(e)
-          }
+          AND NOT e.reason IN ['Pulled', 'Created', 'Started', 'Scheduled', 'Completed',
+                               'SuccessfulCreate', 'SuccessfulDelete', 'Killing', 'SawCompletedJob',
+                               'LOG_INFO']
 
         OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource {client_id: $client_id})
-        OPTIONAL MATCH (e)-[pc:POTENTIAL_CAUSE {client_id: $client_id}]->(downstream:Episodic {client_id: $client_id})
+        OPTIONAL MATCH (upstream:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE {client_id: $client_id}]->(e)
+        OPTIONAL MATCH (e)-[:POTENTIAL_CAUSE {client_id: $client_id}]->(downstream:Episodic {client_id: $client_id})
 
-        WITH e, r, count(downstream) as effects_caused
+        WITH e, r,
+             count(DISTINCT upstream) as upstream_count,
+             count(DISTINCT downstream) as effects_caused
         WHERE effects_caused > 0
+          AND upstream_count <= $max_upstream
 
         RETURN
           e.eid as event_id,
@@ -64,8 +68,9 @@ class Neo4jService:
           r.kind as resource_kind,
           r.name as resource_name,
           r.ns as namespace,
+          upstream_count as upstream_causes,
           effects_caused as blast_radius
-        ORDER BY effects_caused DESC, e.event_time DESC
+        ORDER BY upstream_count ASC, effects_caused DESC, e.event_time DESC
         LIMIT $limit
         """
 
@@ -74,7 +79,8 @@ class Neo4jService:
                 query,
                 client_id=client_id,
                 hours=time_range_hours,
-                limit=limit
+                limit=limit,
+                max_upstream=max_upstream_causes
             )
 
             root_causes = []
@@ -86,6 +92,7 @@ class Neo4jService:
                     "resource_kind": record["resource_kind"],
                     "resource_name": record["resource_name"],
                     "namespace": record["namespace"],
+                    "upstream_causes": record["upstream_causes"],
                     "blast_radius": record["blast_radius"]
                 })
 
