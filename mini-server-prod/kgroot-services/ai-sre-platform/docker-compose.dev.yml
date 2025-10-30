@@ -1,0 +1,47 @@
+version: '3.8'
+
+# Development environment with hot-reload
+
+services:
+  ai-sre-api:
+    build: .
+    container_name: ai-sre-api-dev
+    ports:
+      - "8084:8000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}  # Use cheaper model for dev
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./src:/app/src  # Hot reload
+      - ./.env:/app/.env
+    depends_on:
+      - neo4j
+    networks:
+      - ai-sre-network
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  neo4j:
+    image: neo4j:5.14-community
+    container_name: neo4j-dev
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-password}
+      - NEO4J_dbms_memory_heap_max__size=512M
+      - NEO4J_dbms_memory_pagecache_size=256M
+    volumes:
+      - neo4j_dev_data:/data
+    networks:
+      - ai-sre-network
+
+networks:
+  ai-sre-network:
+    driver: bridge
+
+volumes:
+  neo4j_dev_data:
