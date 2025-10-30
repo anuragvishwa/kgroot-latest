@@ -93,11 +93,18 @@ async def semantic_search(request: SearchRequest):
             if timestamp and hasattr(timestamp, 'to_native'):
                 timestamp = timestamp.to_native()
 
+            # Get metadata and convert any Neo4j DateTime objects
+            result_metadata = metadata.get('event_data') or metadata.get('resource_data', {})
+            # Convert all datetime values in metadata
+            for key, value in result_metadata.items():
+                if value and hasattr(value, 'to_native'):
+                    result_metadata[key] = value.to_native()
+
             result = SearchResult(
                 item_type=metadata['item_type'],
                 item_id=metadata['item_id'],
                 content=metadata['content'],
-                metadata=metadata.get('event_data') or metadata.get('resource_data', {}),
+                metadata=result_metadata,
                 similarity_score=similarity,
                 timestamp=timestamp
             )
