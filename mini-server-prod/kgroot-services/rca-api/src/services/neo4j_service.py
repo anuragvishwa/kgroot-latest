@@ -150,7 +150,9 @@ class Neo4jService:
         Find all events affected by a root cause
         """
         query = """
-        MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[:POTENTIAL_CAUSE* {client_id: $client_id}]->(affected:Episodic {client_id: $client_id})
+        MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[rels:POTENTIAL_CAUSE*1..10]->(affected:Episodic {client_id: $client_id})
+        WHERE all(rel in rels WHERE rel.client_id = $client_id)
+          AND all(n in nodes(path) WHERE n.client_id = $client_id)
 
         WITH
           affected,
