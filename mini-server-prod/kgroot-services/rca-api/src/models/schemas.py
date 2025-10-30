@@ -175,7 +175,7 @@ class ResourceInfo(BaseModel):
     labels: Optional[Dict[str, str]] = None
     owner: Optional[str] = Field(None, description="Owner/team")
     size: Optional[str] = Field(None, description="Small/Medium/Large")
-    created_at: datetime
+    created_at: Optional[datetime] = None
     status: Optional[str] = None
     dependencies: List[str] = Field(default_factory=list, description="Dependent resources")
     recent_events: int = Field(0, description="Event count in last 24h")
