@@ -1,10 +1,11 @@
 """
 GPT-5 service for intelligent RCA analysis
 """
-from openai import OpenAI
+from openai import AsyncOpenAI
 from typing import List, Dict, Any, Optional
 import json
 import logging
+import asyncio
 
 from ..config import settings
 
@@ -15,18 +16,21 @@ class GPT5Service:
     """Service for GPT-5 powered RCA analysis"""
 
     def __init__(self):
-        self.client: Optional[OpenAI] = None
+        self.client: Optional[AsyncOpenAI] = None
 
     def initialize(self):
         """Initialize OpenAI client"""
         try:
-            self.client = OpenAI(api_key=settings.openai_api_key)
+            self.client = AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                timeout=60.0  # 60 second timeout to prevent hanging
+            )
             logger.info("GPT-5 service initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize GPT-5 service: {e}")
             raise
 
-    def analyze_rca(
+    async def analyze_rca(
         self,
         query: str,
         root_causes: List[Dict[str, Any]],
@@ -61,7 +65,7 @@ class GPT5Service:
         try:
             # Try GPT-5 Responses API first
             if hasattr(self.client, 'responses'):
-                response = self.client.responses.create(
+                response = await self.client.responses.create(
                     model=settings.openai_model,
                     input=[
                         {"role": "system", "content": system_prompt},
@@ -76,7 +80,7 @@ class GPT5Service:
             else:
                 # Fallback to Chat Completions API
                 logger.warning("Responses API not available, using Chat Completions API")
-                response = self.client.chat.completions.create(
+                response = await self.client.chat.completions.create(
                     model="gpt-4-turbo" if "gpt-5" in settings.openai_model else settings.openai_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -108,7 +112,7 @@ class GPT5Service:
                 "error": str(e)
             }
 
-    def chat_assistant(
+    async def chat_assistant(
         self,
         message: str,
         context_data: Optional[Dict[str, Any]] = None,
@@ -136,7 +140,7 @@ Be concise, accurate, and helpful. Focus on practical solutions."""
         messages.append({"role": "user", "content": message})
 
         try:
-            response = self.client.responses.create(
+            response = await self.client.responses.create(
                 model=settings.openai_model,
                 input=messages,
                 reasoning={"effort": reasoning_effort},
@@ -157,7 +161,7 @@ Be concise, accurate, and helpful. Focus on practical solutions."""
                 "error": str(e)
             }
 
-    def generate_slack_alert(
+    async def generate_slack_alert(
         self,
         incident_data: Dict[str, Any],
         reasoning_effort: str = "minimal"
@@ -176,7 +180,7 @@ Keep it under 200 characters for the summary."""
 {json.dumps(incident_data, indent=2, default=str)}"""
 
         try:
-            response = self.client.responses.create(
+            response = await self.client.responses.create(
                 model=settings.openai_model,
                 input=[
                     {"role": "system", "content": system_prompt},
@@ -193,7 +197,7 @@ Keep it under 200 characters for the summary."""
             # Fallback to simple template
             return f"🚨 Incident: {incident_data.get('title', 'Unknown issue')}\nAffected: {', '.join(incident_data.get('affected_resources', [])[:3])}"
 
-    def suggest_runbook(
+    async def suggest_runbook(
         self,
         failure_pattern: str,
         resource_type: str
@@ -216,7 +220,7 @@ Include:
 4. Verification steps"""
 
         try:
-            response = self.client.responses.create(
+            response = await self.client.responses.create(
                 model=settings.openai_model,
                 input=[
                     {"role": "system", "content": system_prompt},

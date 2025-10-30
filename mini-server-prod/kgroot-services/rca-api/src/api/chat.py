@@ -66,7 +66,7 @@ async def chat_with_assistant(request: ChatRequest):
                     })
 
         # Call GPT-5 assistant
-        response = gpt5_service.chat_assistant(
+        response = await gpt5_service.chat_assistant(
             message=request.message,
             context_data=context_data,
             conversation_history=conversation_history,

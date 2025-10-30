@@ -93,7 +93,7 @@ async def analyze_rca(
         logger.info(f"Found {len(cross_service_failures)} cross-service failures")
 
         # Step 5: Use GPT-5 to analyze and provide insights
-        gpt5_analysis = gpt5_service.analyze_rca(
+        gpt5_analysis = await gpt5_service.analyze_rca(
             query=request.query,
             root_causes=root_causes,
             causal_chains=causal_chains_data,
@@ -281,7 +281,7 @@ async def generate_runbook(
     Generate runbook for a failure pattern using GPT-5
     """
     try:
-        runbook = gpt5_service.suggest_runbook(
+        runbook = await gpt5_service.suggest_runbook(
             failure_pattern=failure_pattern,
             resource_type=resource_type
         )
