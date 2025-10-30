@@ -318,26 +318,35 @@ Provide a JSON response with:
         try:
             logger.info(f"Calling {self.model} for synthesis...")
 
-            # Prepare API call parameters
-            api_params = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.3,  # Lower temperature for more consistent output
-            }
+            # GPT-5 uses Responses API, others use Chat Completions
+            if "gpt-5" in self.model.lower():
+                # GPT-5 Responses API
+                combined_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-            # GPT-5 (o1/o3 models) use max_completion_tokens, others use max_tokens
-            if self.model.startswith("o1") or self.model.startswith("o3") or "gpt-5" in self.model.lower():
-                api_params["max_completion_tokens"] = 2000
+                response = await self.openai_client.responses.create(
+                    model=self.model,
+                    input=combined_prompt,
+                    reasoning={"effort": "medium"},
+                    text={"verbosity": "medium"},
+                    max_output_tokens=2000,
+                    response_format={"type": "json_object"}
+                )
+
+                synthesis_json = json.loads(response.output_text)
             else:
-                api_params["max_tokens"] = 2000
+                # Chat Completions API for GPT-4, etc.
+                response = await self.openai_client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.3,
+                    max_tokens=2000
+                )
 
-            response = await self.openai_client.chat.completions.create(**api_params)
-
-            synthesis_json = json.loads(response.choices[0].message.content)
+                synthesis_json = json.loads(response.choices[0].message.content)
 
             latency_ms = int((time.time() - start_time) * 1000)
             logger.info(f"{self.model} synthesis completed in {latency_ms}ms")
