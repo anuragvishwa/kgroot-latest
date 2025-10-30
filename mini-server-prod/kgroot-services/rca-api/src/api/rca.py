@@ -297,63 +297,280 @@ async def generate_runbook(
 async def build_causality_on_demand(
     client_id: str,
     time_range_hours: int = 24,
-    min_confidence: float = 0.3
+    min_confidence: float = 0.3,
+    build_relationships: bool = True
 ):
     """
     Build POTENTIAL_CAUSE relationships on-demand for a client
 
     This analyzes events and creates causal relationships based on:
-    - Temporal proximity
-    - Resource relationships
-    - Error patterns
+    - Adaptive time windows (2-15 min based on failure type)
+    - 30+ domain knowledge patterns (KGroot paper)
+    - Service topology integration (SELECTS, RUNS_ON, CONTROLS)
+    - Top-5 filtering (keeps only top 5 causes per event)
+    - Multi-dimensional confidence scoring
+
+    Parameters:
+    - client_id: Client identifier
+    - time_range_hours: Hours of history to analyze (default 24)
+    - min_confidence: Minimum confidence threshold (default 0.3)
+    - build_relationships: If True, creates relationships; if False, only diagnostics
 
     Use this after ingesting new events to immediately build the causal graph.
     """
     try:
-        logger.info(f"Building causality for client {client_id}")
+        logger.info(f"Building causality for client {client_id} (build={build_relationships})")
+        start_time = time.time()
 
-        # Get all recent events for this client
-        from datetime import datetime, timedelta, timezone
-
-        # This is a simplified version - you should call your control plane's causality builder
-        # For now, return stats about what could be analyzed
-
-        query = """
+        # Count events before building
+        count_query = """
         MATCH (e:Episodic {client_id: $client_id})
         WHERE e.event_time > datetime() - duration({hours: $hours})
         RETURN count(e) as event_count
         """
 
         with neo4j_service.driver.session() as session:
-            result = session.run(query, client_id=client_id, hours=time_range_hours)
+            result = session.run(count_query, client_id=client_id, hours=time_range_hours)
             event_count = result.single()['event_count']
 
-        # Count existing relationships
-        rel_query = """
+        # Count existing relationships before
+        rel_count_query = """
         MATCH ()-[r:POTENTIAL_CAUSE {client_id: $client_id}]->()
         RETURN count(r) as relationship_count
         """
 
         with neo4j_service.driver.session() as session:
-            result = session.run(rel_query, client_id=client_id)
-            rel_count = result.single()['relationship_count']
+            result = session.run(rel_count_query, client_id=client_id)
+            rel_count_before = result.single()['relationship_count']
+
+        if not build_relationships:
+            # Diagnostic mode only
+            return {
+                "client_id": client_id,
+                "status": "diagnostic_complete",
+                "events_found": event_count,
+                "existing_relationships": rel_count_before,
+                "message": f"Found {event_count} events and {rel_count_before} existing relationships.",
+                "build_relationships": False
+            }
+
+        # ============================================================================
+        # ENHANCED CAUSALITY BUILDING (from CREATE-CAUSAL-RELATIONSHIPS-ENHANCED.cypher)
+        # ============================================================================
+
+        causality_build_query = """
+        MATCH (e1:Episodic)
+        WHERE e1.client_id = $client_id
+          AND e1.event_time > datetime() - duration({hours: $hours})
+
+        MATCH (e2:Episodic)
+        WHERE e2.client_id = $client_id
+          AND e1.client_id = e2.client_id
+
+        // Adaptive time window based on failure type
+        WITH e1, e2,
+             CASE
+               WHEN e1.reason IN ['OOMKilled', 'Killing', 'Error'] THEN 2
+               WHEN e1.reason CONTAINS 'ImagePull' THEN 5
+               WHEN e1.reason IN ['FailedScheduling', 'FailedMount'] THEN 15
+               ELSE 10
+             END as adaptive_window_minutes
+
+        WHERE e2.event_time > e1.event_time
+          AND e2.event_time < e1.event_time + duration({minutes: adaptive_window_minutes})
+
+        // Get resources and topology path
+        OPTIONAL MATCH (e1)-[:ABOUT]->(r1:Resource {client_id: $client_id})
+        OPTIONAL MATCH (e2)-[:ABOUT]->(r2:Resource {client_id: $client_id})
+        OPTIONAL MATCH topology_path = (r1)-[:SELECTS|RUNS_ON|CONTROLS*1..3]-(r2)
+        WHERE ALL(rel IN relationships(topology_path) WHERE rel.client_id = $client_id)
+
+        WITH e1, e2, r1, r2, topology_path,
+             duration.between(e1.event_time, e2.event_time).seconds as time_diff_seconds
+
+        // Domain knowledge: 30+ Kubernetes failure patterns
+        WITH e1, e2, r1, r2, topology_path, time_diff_seconds,
+             CASE
+               // Resource exhaustion patterns
+               WHEN e1.reason = 'OOMKilled' AND e2.reason IN ['BackOff', 'Failed', 'Killing'] THEN 0.95
+               WHEN e1.reason = 'OOMKilled' AND e2.reason = 'Evicted' THEN 0.90
+               WHEN e1.reason = 'MemoryPressure' AND e2.reason IN ['OOMKilled', 'Evicted'] THEN 0.88
+               WHEN e1.reason = 'DiskPressure' AND e2.reason IN ['Evicted', 'Failed'] THEN 0.85
+               WHEN e1.reason = 'PIDPressure' AND e2.reason IN ['Failed', 'BackOff'] THEN 0.82
+
+               // Image/registry issues
+               WHEN e1.reason CONTAINS 'ImagePull' AND e2.reason IN ['Failed', 'BackOff'] THEN 0.90
+               WHEN e1.reason = 'ImagePullBackOff' AND e2.reason = 'Failed' THEN 0.92
+               WHEN e1.reason = 'ErrImagePull' AND e2.reason = 'ImagePullBackOff' THEN 0.93
+               WHEN e1.reason = 'InvalidImageName' AND e2.reason CONTAINS 'ImagePull' THEN 0.88
+               WHEN e1.reason = 'RegistryUnavailable' AND e2.reason CONTAINS 'ImagePull' THEN 0.87
+
+               // Health check failures
+               WHEN e1.reason = 'Unhealthy' AND e2.reason IN ['Killing', 'Failed', 'BackOff'] THEN 0.88
+               WHEN e1.reason = 'ProbeWarning' AND e2.reason = 'Unhealthy' THEN 0.85
+               WHEN e1.reason = 'LivenessProbe' AND e2.reason IN ['Killing', 'BackOff'] THEN 0.87
+               WHEN e1.reason = 'ReadinessProbe' AND e2.reason = 'Unhealthy' THEN 0.83
+
+               // Scheduling failures
+               WHEN e1.reason = 'FailedScheduling' AND e2.reason IN ['Pending', 'Failed'] THEN 0.90
+               WHEN e1.reason = 'Unschedulable' AND e2.reason = 'FailedScheduling' THEN 0.88
+               WHEN e1.reason = 'NodeAffinity' AND e2.reason IN ['FailedScheduling', 'Pending'] THEN 0.86
+               WHEN e1.reason = 'Taints' AND e2.reason IN ['FailedScheduling', 'Pending'] THEN 0.85
+               WHEN e1.reason = 'InsufficientResources' AND e2.reason = 'FailedScheduling' THEN 0.89
+
+               // Volume/mount issues
+               WHEN e1.reason = 'FailedMount' AND e2.reason IN ['Failed', 'ContainerCreating'] THEN 0.88
+               WHEN e1.reason = 'VolumeFailure' AND e2.reason IN ['FailedMount', 'Failed'] THEN 0.87
+               WHEN e1.reason = 'FailedAttachVolume' AND e2.reason = 'FailedMount' THEN 0.90
+               WHEN e1.reason = 'VolumeNotFound' AND e2.reason IN ['FailedMount', 'Failed'] THEN 0.86
+
+               // Network failures
+               WHEN e1.reason = 'NetworkNotReady' AND e2.reason IN ['Failed', 'Pending'] THEN 0.85
+               WHEN e1.reason = 'FailedCreatePodSandBox' AND e2.reason IN ['Failed', 'BackOff'] THEN 0.87
+               WHEN e1.reason = 'CNIFailed' AND e2.reason = 'NetworkNotReady' THEN 0.88
+               WHEN e1.reason = 'IPAllocationFailed' AND e2.reason IN ['Failed', 'Pending'] THEN 0.86
+               WHEN e1.reason = 'DNSConfigForming' AND e2.reason IN ['Failed', 'BackOff'] THEN 0.82
+
+               // Crash/exit patterns
+               WHEN e1.reason = 'Error' AND e2.reason IN ['BackOff', 'Failed', 'CrashLoopBackOff'] THEN 0.87
+               WHEN e1.reason = 'Completed' AND e2.reason = 'BackOff' THEN 0.75
+               WHEN e1.reason = 'CrashLoopBackOff' AND e2.reason = 'Failed' THEN 0.85
+               WHEN e1.reason CONTAINS 'Exit' AND e2.reason IN ['BackOff', 'Failed'] THEN 0.80
+
+               // Config/RBAC issues
+               WHEN e1.reason = 'FailedCreate' AND e2.reason IN ['Failed', 'BackOff'] THEN 0.84
+               WHEN e1.reason = 'Forbidden' AND e2.reason IN ['Failed', 'FailedCreate'] THEN 0.88
+               WHEN e1.reason = 'Unauthorized' AND e2.reason IN ['Failed', 'Forbidden'] THEN 0.87
+               WHEN e1.reason = 'InvalidConfiguration' AND e2.reason IN ['Failed', 'BackOff'] THEN 0.86
+               WHEN e1.reason = 'ConfigMapNotFound' AND e2.reason IN ['Failed', 'BackOff'] THEN 0.85
+
+               // Generic fallback
+               ELSE 0.30
+             END as domain_score
+
+        // Temporal score: Linear decay over 5 minutes
+        WITH e1, e2, r1, r2, topology_path, time_diff_seconds, domain_score,
+             CASE
+               WHEN time_diff_seconds <= 0 THEN 0.0
+               WHEN time_diff_seconds >= 300 THEN 0.1
+               ELSE 1.0 - (toFloat(time_diff_seconds) / 300.0) * 0.9
+             END as temporal_score
+
+        // Distance score: Topology-aware distance
+        WITH e1, e2, time_diff_seconds, domain_score, temporal_score, topology_path, r1, r2,
+             CASE
+               WHEN r1.name = r2.name AND r1.name IS NOT NULL THEN 0.95
+               WHEN topology_path IS NOT NULL AND length(topology_path) = 1 THEN 0.85
+               WHEN topology_path IS NOT NULL AND length(topology_path) = 2 THEN 0.70
+               WHEN topology_path IS NOT NULL AND length(topology_path) = 3 THEN 0.55
+               WHEN r1.ns = r2.ns AND r1.kind = r2.kind AND r1.ns IS NOT NULL THEN 0.40
+               ELSE 0.20
+             END as distance_score
+
+        // Overall confidence: Weighted combination
+        WITH e1, e2, temporal_score, distance_score, domain_score, time_diff_seconds,
+             (0.4 * temporal_score + 0.3 * distance_score + 0.3 * domain_score) as confidence
+
+        WHERE confidence > $min_confidence
+
+        // Top-5 filtering: Keep only top 5 causes per event
+        WITH e2, e1, confidence, temporal_score, distance_score, domain_score, time_diff_seconds
+        ORDER BY e2.eid, confidence DESC
+
+        WITH e2, collect({
+          e1_id: e1.eid,
+          confidence: confidence,
+          temporal_score: temporal_score,
+          distance_score: distance_score,
+          domain_score: domain_score,
+          time_diff_seconds: time_diff_seconds
+        })[0..5] as top_causes
+
+        UNWIND top_causes as cause
+
+        MATCH (e1:Episodic {eid: cause.e1_id, client_id: $client_id})
+
+        // Create relationship with full client_id isolation
+        MERGE (e1)-[pc:POTENTIAL_CAUSE]->(e2)
+        ON CREATE SET
+          pc.client_id = $client_id,
+          pc.confidence = round(cause.confidence * 1000.0) / 1000.0,
+          pc.temporal_score = round(cause.temporal_score * 1000.0) / 1000.0,
+          pc.distance_score = round(cause.distance_score * 1000.0) / 1000.0,
+          pc.domain_score = round(cause.domain_score * 1000.0) / 1000.0,
+          pc.time_gap_seconds = cause.time_diff_seconds,
+          pc.created_at = datetime(),
+          pc.version = 'enhanced_v1'
+        ON MATCH SET
+          pc.confidence = round(cause.confidence * 1000.0) / 1000.0,
+          pc.temporal_score = round(cause.temporal_score * 1000.0) / 1000.0,
+          pc.distance_score = round(cause.distance_score * 1000.0) / 1000.0,
+          pc.domain_score = round(cause.domain_score * 1000.0) / 1000.0,
+          pc.time_gap_seconds = cause.time_diff_seconds,
+          pc.updated_at = datetime()
+
+        RETURN count(*) as relationships_created
+        """
+
+        logger.info(f"Executing enhanced causality building for {event_count} events...")
+
+        # Execute the causality building query
+        with neo4j_service.driver.session() as session:
+            result = session.run(
+                causality_build_query,
+                client_id=client_id,
+                hours=time_range_hours,
+                min_confidence=min_confidence
+            )
+            relationships_created = result.single()['relationships_created']
+
+        # Count relationships after
+        with neo4j_service.driver.session() as session:
+            result = session.run(rel_count_query, client_id=client_id)
+            rel_count_after = result.single()['relationship_count']
+
+        # Get statistics
+        stats_query = """
+        MATCH (e1:Episodic {client_id: $client_id})-[pc:POTENTIAL_CAUSE {client_id: $client_id}]->(e2:Episodic {client_id: $client_id})
+        RETURN
+          count(pc) as total_relationships,
+          round(avg(pc.confidence) * 1000.0) / 1000.0 as avg_confidence,
+          round(max(pc.confidence) * 1000.0) / 1000.0 as max_confidence,
+          round(min(pc.confidence) * 1000.0) / 1000.0 as min_confidence
+        """
+
+        with neo4j_service.driver.session() as session:
+            result = session.run(stats_query, client_id=client_id)
+            stats = result.single()
+
+        processing_time = int((time.time() - start_time) * 1000)
+
+        logger.info(f"Causality building complete: {relationships_created} relationships, {processing_time}ms")
 
         return {
             "client_id": client_id,
-            "status": "analysis_complete",
-            "events_found": event_count,
-            "existing_relationships": rel_count,
-            "message": f"Found {event_count} events. To build relationships, your control plane service needs to analyze these events and create POTENTIAL_CAUSE links.",
+            "status": "success",
+            "events_analyzed": event_count,
+            "relationships_before": rel_count_before,
+            "relationships_after": rel_count_after,
+            "relationships_created_or_updated": relationships_created,
+            "statistics": {
+                "total_relationships": stats['total_relationships'],
+                "avg_confidence": stats['avg_confidence'],
+                "max_confidence": stats['max_confidence'],
+                "min_confidence": stats['min_confidence']
+            },
+            "processing_time_ms": processing_time,
+            "message": f"Successfully built {relationships_created} POTENTIAL_CAUSE relationships with enhanced KGroot algorithm",
             "next_steps": [
-                "Ensure event-exporter is running and sending events to Kafka",
-                "Ensure control plane is consuming from Kafka and writing to Neo4j",
-                "Check control plane logs for any errors",
-                "Events should appear within 1-2 minutes of pod activity"
+                "Query root causes: GET /api/v1/rca/root-causes/{client_id}",
+                "Run RCA analysis: POST /api/v1/rca/analyze",
+                "Check blast radius: GET /api/v1/rca/blast-radius/{event_id}"
             ]
         }
 
     except Exception as e:
-        logger.error(f"Failed to build causality: {e}")
+        logger.error(f"Failed to build causality: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
