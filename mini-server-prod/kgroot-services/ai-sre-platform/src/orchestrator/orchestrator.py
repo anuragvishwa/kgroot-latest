@@ -318,44 +318,41 @@ Provide a JSON response with:
         try:
             logger.info(f"Calling {self.model} for synthesis...")
 
-            # GPT-5 uses Responses API, but fallback to Chat Completions if not available
-            if "gpt-5" in self.model.lower() and hasattr(self.openai_client, 'responses'):
-                # GPT-5 Responses API (if SDK supports it)
-                combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+            # GPT-5 uses Responses API (matching working RCA API at port 8083)
+            if "gpt-5" in self.model.lower():
+                logger.info("Using GPT-5 Responses API (matching RCA API implementation)")
 
+                # Use message list format exactly like working RCA API
                 response = await self.openai_client.responses.create(
                     model=self.model,
-                    input=combined_prompt,
-                    reasoning={"effort": "medium"},
-                    text={"verbosity": "medium"},
-                    max_output_tokens=2000,
-                    response_format={"type": "json_object"}
-                )
-
-                synthesis_json = json.loads(response.output_text)
-            else:
-                # Chat Completions API for GPT-4, GPT-4o, or GPT-5 with Chat Completions
-                # GPT-5 via Chat Completions uses reasoning_effort parameter
-                api_params = {
-                    "model": self.model,
-                    "messages": [
+                    input=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    "response_format": {"type": "json_object"},
-                }
+                    reasoning={"effort": "medium"},
+                    text={"verbosity": "medium"}
+                )
 
-                # Add model-specific parameters
-                if "gpt-5" in self.model.lower():
-                    # GPT-5 via Chat Completions
-                    api_params["reasoning_effort"] = "medium"
-                    api_params["max_completion_tokens"] = 2000
-                else:
-                    # GPT-4, GPT-4o, etc.
-                    api_params["temperature"] = 0.3
-                    api_params["max_tokens"] = 2000
+                # Try to parse as JSON, fall back to structured extraction
+                output_text = response.output_text
+                try:
+                    synthesis_json = json.loads(output_text)
+                except json.JSONDecodeError:
+                    logger.warning("GPT-5 output is not JSON, parsing as text")
+                    synthesis_json = self._parse_text_response(output_text, agent_results)
+            else:
+                # Chat Completions API for GPT-4, GPT-4o, etc.
+                response = await self.openai_client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.3,
+                    max_tokens=2000
+                )
 
-                response = await self.openai_client.chat.completions.create(**api_params)
                 synthesis_json = json.loads(response.choices[0].message.content)
 
             latency_ms = int((time.time() - start_time) * 1000)
@@ -408,6 +405,45 @@ Provide a JSON response with:
             sections.append("\n".join(section))
 
         return "\n\n".join(sections)
+
+    def _parse_text_response(self, text: str, agent_results: Dict[str, AgentResult]) -> Dict[str, Any]:
+        """Parse GPT-5 text response into structured format"""
+        # Extract root causes from agent findings
+        root_causes = []
+        for result in agent_results.values():
+            for finding in result.findings:
+                if finding.kind == "root_cause":
+                    root_causes.append({
+                        "event_id": finding.detail.get('event_id'),
+                        "reason": finding.detail.get('reason'),
+                        "resource": f"{finding.detail.get('resource_kind')}/{finding.detail.get('resource_name')}",
+                        "explanation": finding.detail.get('reason', 'Unknown'),
+                        "confidence": finding.confidence
+                    })
+
+        # Extract summary (first few lines)
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        summary = ' '.join(lines[:3]) if lines else text[:200]
+
+        # Extract immediate actions (lines with numbers or bullets)
+        actions = []
+        for line in lines:
+            if line.startswith(('1.', '2.', '3.', '4.', '5.', '-', '*', '•')):
+                actions.append(line.lstrip('12345.-*• '))
+
+        return {
+            "summary": summary,
+            "root_causes": root_causes,
+            "contributing_factors": [],
+            "blast_radius": {},
+            "immediate_actions": actions if actions else ["Review the analysis above", "Check recent deployments"],
+            "confidence": 0.75,
+            "confidence_breakdown": {
+                "graph_analysis": 0.85,
+                "temporal_correlation": 0.0,
+                "domain_pattern_match": 0.0
+            }
+        }
 
     def _fallback_synthesis(self, agent_results: Dict[str, AgentResult]) -> InvestigationSynthesis:
         """Fallback synthesis without LLM (if GPT-5 fails)"""
