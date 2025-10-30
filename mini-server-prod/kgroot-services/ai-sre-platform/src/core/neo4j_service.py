@@ -33,15 +33,16 @@ class Neo4jService:
         client_id: str,
         time_range_hours: int = 24,
         limit: int = 10,
-        max_upstream_causes: int = 2
+        max_upstream_causes: int = 10
     ) -> List[Dict[str, Any]]:
         """
         Find likely root causes using tiered strategy:
 
-        1. Primary: Events with 0-2 upstream causes (early in causal chain)
-        2. Fallback: Most impactful failure events if no primary root causes
+        1. Primary: Events with ≤10 upstream causes (early in causal chain)
+        2. Sort by: fewest upstream first, then highest blast radius
 
         Filters out normal events (Pulled, Created, Started, Scheduled, Completed, SuccessfulCreate)
+        Includes actual failures: BackOff, Failed, Unhealthy, FailedMount, FailedScheduling, Pulling
         """
         query = """
         MATCH (e:Episodic {client_id: $client_id})
