@@ -79,7 +79,14 @@ class Neo4jService:
                 hours=time_range_hours,
                 limit=limit
             )
-            return [dict(record) for record in result]
+            # Convert Neo4j DateTime to Python datetime for Pydantic serialization
+            records = []
+            for record in result:
+                data = dict(record)
+                if 'timestamp' in data and data['timestamp']:
+                    data['timestamp'] = data['timestamp'].to_native()
+                records.append(data)
+            return records
 
     def find_causal_chain(
         self,
@@ -138,7 +145,14 @@ class Neo4jService:
                 client_id=client_id,
                 max_hops=max_hops
             )
-            return [dict(record) for record in result]
+            # Convert Neo4j DateTime to Python datetime for Pydantic serialization
+            records = []
+            for record in result:
+                data = dict(record)
+                if 'timestamp' in data and data['timestamp']:
+                    data['timestamp'] = data['timestamp'].to_native()
+                records.append(data)
+            return records
 
     def get_blast_radius(
         self,
@@ -181,7 +195,14 @@ class Neo4jService:
                 client_id=client_id,
                 limit=limit
             )
-            return [dict(record) for record in result]
+            # Convert Neo4j DateTime to Python datetime for Pydantic serialization
+            records = []
+            for record in result:
+                data = dict(record)
+                if 'timestamp' in data and data['timestamp']:
+                    data['timestamp'] = data['timestamp'].to_native()
+                records.append(data)
+            return records
 
     def find_events_by_criteria(
         self,
