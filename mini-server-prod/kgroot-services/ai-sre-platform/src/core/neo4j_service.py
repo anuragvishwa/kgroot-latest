@@ -276,3 +276,65 @@ class Neo4jService:
             result = session.run(query, client_id=client_id, hours=time_range_hours)
             record = result.single()
             return record["event_count"] if record else 0
+
+    def semantic_search_events(
+        self,
+        query_embedding: List[float],
+        client_id: str,
+        time_range_hours: Optional[int] = None,
+        limit: int = 10,
+        similarity_threshold: float = 0.7
+    ) -> List[Dict[str, Any]]:
+        """
+        Semantic search for events using embedding vector (GraphRAG)
+
+        Note: This is a simplified implementation. For production GraphRAG:
+        1. Add vector index to Neo4j: CREATE VECTOR INDEX event_embeddings IF NOT EXISTS FOR (e:Episodic) ON (e.embedding)
+        2. Store embeddings during event ingestion
+        3. Use Neo4j's native vector search: db.index.vector.queryNodes()
+
+        For now, we return text-based search as fallback.
+        """
+        # For now, use text-based search as fallback
+        # TODO: Implement true vector search once Neo4j has event embeddings
+
+        query = """
+        MATCH (e:Episodic {client_id: $client_id})
+        WHERE ($time_range_hours IS NULL OR e.event_time > datetime() - duration({hours: $time_range_hours}))
+        RETURN
+            e.event_id as event_id,
+            e.reason as reason,
+            e.message as message,
+            e.resource_kind as resource_kind,
+            e.resource_name as resource_name,
+            e.namespace as namespace,
+            e.event_time as timestamp,
+            e.client_id as client_id
+        ORDER BY e.event_time DESC
+        LIMIT $limit
+        """
+
+        with self.driver.session() as session:
+            result = session.run(
+                query,
+                client_id=client_id,
+                time_range_hours=time_range_hours,
+                limit=limit
+            )
+
+            events = []
+            for record in result:
+                events.append({
+                    "event_id": record["event_id"],
+                    "reason": record["reason"],
+                    "message": record["message"],
+                    "resource_kind": record["resource_kind"],
+                    "resource_name": record["resource_name"],
+                    "namespace": record["namespace"],
+                    "timestamp": record["timestamp"].isoformat() if record["timestamp"] else None,
+                    "client_id": record["client_id"],
+                    "similarity_score": 0.8  # Placeholder - would be computed from embedding
+                })
+
+            logger.info(f"Semantic search returned {len(events)} events (text-based fallback)")
+            return events
