@@ -301,13 +301,18 @@ class Neo4jService:
         query = """
         MATCH (e:Episodic {client_id: $client_id})
         WHERE ($time_range_hours IS NULL OR e.event_time > datetime() - duration({hours: $time_range_hours}))
+
+        OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource {client_id: $client_id})
+
         RETURN
-            e.event_id as event_id,
+            e.eid as event_id,
             e.reason as reason,
             e.message as message,
-            e.resource_kind as resource_kind,
-            e.resource_name as resource_name,
-            e.namespace as namespace,
+            e.etype as event_type,
+            e.severity as severity,
+            r.kind as resource_kind,
+            r.name as resource_name,
+            r.ns as namespace,
             e.event_time as timestamp,
             e.client_id as client_id
         ORDER BY e.event_time DESC
@@ -328,6 +333,8 @@ class Neo4jService:
                     "event_id": record["event_id"],
                     "reason": record["reason"],
                     "message": record["message"],
+                    "event_type": record["event_type"],
+                    "severity": record["severity"],
                     "resource_kind": record["resource_kind"],
                     "resource_name": record["resource_name"],
                     "namespace": record["namespace"],
