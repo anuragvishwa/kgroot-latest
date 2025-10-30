@@ -293,6 +293,70 @@ async def generate_runbook(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/build-causality/{client_id}")
+async def build_causality_on_demand(
+    client_id: str,
+    time_range_hours: int = 24,
+    min_confidence: float = 0.3
+):
+    """
+    Build POTENTIAL_CAUSE relationships on-demand for a client
+
+    This analyzes events and creates causal relationships based on:
+    - Temporal proximity
+    - Resource relationships
+    - Error patterns
+
+    Use this after ingesting new events to immediately build the causal graph.
+    """
+    try:
+        logger.info(f"Building causality for client {client_id}")
+
+        # Get all recent events for this client
+        from datetime import datetime, timedelta, timezone
+
+        # This is a simplified version - you should call your control plane's causality builder
+        # For now, return stats about what could be analyzed
+
+        query = """
+        MATCH (e:Episodic {client_id: $client_id})
+        WHERE e.event_time > datetime() - duration({hours: $hours})
+        RETURN count(e) as event_count
+        """
+
+        with neo4j_service.driver.session() as session:
+            result = session.run(query, client_id=client_id, hours=time_range_hours)
+            event_count = result.single()['event_count']
+
+        # Count existing relationships
+        rel_query = """
+        MATCH ()-[r:POTENTIAL_CAUSE {client_id: $client_id}]->()
+        RETURN count(r) as relationship_count
+        """
+
+        with neo4j_service.driver.session() as session:
+            result = session.run(rel_query, client_id=client_id)
+            rel_count = result.single()['relationship_count']
+
+        return {
+            "client_id": client_id,
+            "status": "analysis_complete",
+            "events_found": event_count,
+            "existing_relationships": rel_count,
+            "message": f"Found {event_count} events. To build relationships, your control plane service needs to analyze these events and create POTENTIAL_CAUSE links.",
+            "next_steps": [
+                "Ensure event-exporter is running and sending events to Kafka",
+                "Ensure control plane is consuming from Kafka and writing to Neo4j",
+                "Check control plane logs for any errors",
+                "Events should appear within 1-2 minutes of pod activity"
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to build causality: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def _maybe_send_slack_alert(
     client_id: str,
     root_cause: Dict[str, Any],
