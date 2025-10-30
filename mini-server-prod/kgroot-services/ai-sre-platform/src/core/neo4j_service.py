@@ -162,11 +162,12 @@ class Neo4jService:
         self,
         root_event_id: str,
         client_id: str,
-        limit: int = 50
+        limit: int = 50,
+        max_hops: int = 5
     ) -> List[Dict[str, Any]]:
         """Get all events affected by a root cause (blast radius)"""
         query = """
-        MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[:POTENTIAL_CAUSE*]->(affected:Episodic {client_id: $client_id})
+        MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[:POTENTIAL_CAUSE*1..5]->(affected:Episodic {client_id: $client_id})
         WHERE ALL(rel IN relationships(path) WHERE rel.client_id = $client_id)
 
         WITH
