@@ -140,11 +140,15 @@ async def health():
 
     neo4j_connected = orchestrator.neo4j.verify_connectivity()
 
+    # Get all registered tools from tool registry
+    from src.core.tool_registry import tool_registry
+    available_tools = list(tool_registry.list_tools().keys())
+
     return HealthResponse(
         status="healthy" if neo4j_connected else "degraded",
         neo4j_connected=neo4j_connected,
         available_agents=list(orchestrator.agents.keys()),
-        available_tools=orchestrator.neo4j.__class__.__name__  # Simplified
+        available_tools=available_tools
     )
 
 
