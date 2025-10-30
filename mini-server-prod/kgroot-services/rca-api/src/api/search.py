@@ -88,13 +88,18 @@ async def semantic_search(request: SearchRequest):
                     continue
 
             # Build search result
+            timestamp = metadata.get('timestamp')
+            # Convert Neo4j DateTime to Python datetime if needed
+            if timestamp and hasattr(timestamp, 'to_native'):
+                timestamp = timestamp.to_native()
+
             result = SearchResult(
                 item_type=metadata['item_type'],
                 item_id=metadata['item_id'],
                 content=metadata['content'],
                 metadata=metadata.get('event_data') or metadata.get('resource_data', {}),
                 similarity_score=similarity,
-                timestamp=metadata.get('timestamp')
+                timestamp=timestamp
             )
             filtered_results.append(result)
 
