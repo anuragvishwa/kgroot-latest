@@ -207,19 +207,95 @@ async def investigate(request: InvestigateRequest):
 
 @app.get("/api/v1/stats")
 async def get_stats():
-    """Get platform statistics"""
+    """Get platform statistics including token usage"""
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
     router_stats = orchestrator.router.get_pattern_coverage()
+    token_stats = orchestrator.get_token_stats()
 
     return {
         "router": router_stats,
         "agents": {
             "total": len(orchestrator.agents),
             "available": list(orchestrator.agents.keys())
+        },
+        "semantic_search": {
+            "enabled": orchestrator.semantic_search_enabled,
+            "token_usage": token_stats
         }
     }
+
+
+class SemanticSearchRequest(BaseModel):
+    query: str = Field(..., description="Natural language search query")
+    tenant_id: str = Field(..., description="Tenant/client identifier")
+    limit: int = Field(10, description="Maximum results to return", ge=1, le=50)
+    time_range_hours: Optional[int] = Field(None, description="Filter by time range")
+    include_context: bool = Field(True, description="Include causal graph context (GraphRAG)")
+
+
+@app.post("/api/v1/search")
+async def semantic_search(request: SemanticSearchRequest):
+    """
+    Semantic search for events using natural language queries
+
+    This endpoint uses GraphRAG (Graph + RAG):
+    - Embeddings for semantic similarity
+    - Neo4j graph traversal for causal context
+    - Returns enriched results with upstream causes + downstream effects
+
+    Examples:
+    - "show me DNS failures in the last 6 hours"
+    - "find OOM errors in production namespace"
+    - "connection refused errors"
+    """
+    if not orchestrator:
+        raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+
+    if not orchestrator.semantic_search_enabled:
+        raise HTTPException(
+            status_code=501,
+            detail="Semantic search not enabled. Set enable_semantic_search=True in orchestrator."
+        )
+
+    logger.info(f"Semantic search request: {request.query} (tenant={request.tenant_id})")
+
+    try:
+        # Use embedding service for semantic search
+        if request.include_context:
+            results = await orchestrator.embedding_service.semantic_search_with_context(
+                query=request.query,
+                client_id=request.tenant_id,
+                limit=request.limit,
+                include_causal_context=True
+            )
+        else:
+            results = await orchestrator.embedding_service.semantic_search_events(
+                query=request.query,
+                client_id=request.tenant_id,
+                limit=request.limit,
+                time_range_hours=request.time_range_hours
+            )
+
+        # Get token stats
+        token_stats = orchestrator.get_token_stats()
+
+        return {
+            "query": request.query,
+            "tenant_id": request.tenant_id,
+            "results": results,
+            "count": len(results),
+            "graphrag_enabled": request.include_context,
+            "token_usage": token_stats
+        }
+
+    except Exception as e:
+        logger.error(f"Semantic search failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Semantic search failed: {str(e)}"
+        )
 
 
 # Import timedelta

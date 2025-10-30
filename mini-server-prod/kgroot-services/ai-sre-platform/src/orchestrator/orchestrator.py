@@ -35,7 +35,8 @@ class AIRCAOrchestrator:
         self,
         neo4j_service,
         openai_api_key: str,
-        model: str = "gpt-5"
+        model: str = "gpt-5",
+        enable_semantic_search: bool = True
     ):
         """
         Initialize orchestrator
@@ -44,11 +45,29 @@ class AIRCAOrchestrator:
             neo4j_service: Neo4j service instance
             openai_api_key: OpenAI API key for GPT-5
             model: Model to use (gpt-5, gpt-4o, etc.)
+            enable_semantic_search: Enable semantic search with embeddings (GraphRAG)
         """
         self.neo4j = neo4j_service
         self.router = RuleRouter()
         self.openai_client = AsyncOpenAI(api_key=openai_api_key)
         self.model = model
+        self.semantic_search_enabled = enable_semantic_search
+
+        # Initialize embedding service for GraphRAG
+        self.embedding_service = None
+        if enable_semantic_search:
+            from src.services.embedding_service import OpenAIEmbeddingService, TokenBudget
+            self.embedding_service = OpenAIEmbeddingService(
+                openai_client=self.openai_client,
+                neo4j_service=neo4j_service,
+                token_budget=TokenBudget(
+                    max_tokens_per_request=8000,
+                    max_tokens_per_day=1_000_000,
+                    max_cost_per_request=1.0,
+                    max_cost_per_day=100.0
+                )
+            )
+            logger.info("✓ Semantic search enabled with OpenAI embeddings (GraphRAG)")
 
         # Initialize tools
         from src.tools.graph_tools import (
@@ -63,9 +82,18 @@ class AIRCAOrchestrator:
         Neo4jBlastRadiusTool(neo4j_service)
         Neo4jCrossServiceFailuresTool(neo4j_service)
 
-        # Initialize agents
+        # Initialize semantic search tool if enabled
+        if self.embedding_service:
+            from src.tools.semantic_tools import SemanticSearchTool
+            SemanticSearchTool(self.embedding_service)
+            logger.info("✓ Semantic search tool registered")
+
+        # Initialize agents with all tools
         graph_tools = tool_registry.get_tools_by_category('graph')
-        self.graph_agent = GraphAgent(tools=graph_tools)
+        search_tools = tool_registry.get_tools_by_category('search') if enable_semantic_search else []
+        all_tools = graph_tools + search_tools
+
+        self.graph_agent = GraphAgent(tools=all_tools)
 
         self.agents = {
             'GraphAgent': self.graph_agent
@@ -385,6 +413,15 @@ Provide a JSON response with:
                 "domain_pattern_match": 0.0
             }
         )
+
+    def get_token_stats(self) -> Dict[str, Any]:
+        """Get token usage statistics for embeddings"""
+        if self.embedding_service:
+            return self.embedding_service.get_token_stats()
+        return {
+            "semantic_search_enabled": False,
+            "message": "Semantic search not enabled"
+        }
 
 
 # Import timedelta
