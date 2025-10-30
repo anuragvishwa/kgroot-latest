@@ -40,10 +40,13 @@ class Neo4jService:
         Returns events that:
         - Have no POTENTIAL_CAUSE relationships pointing TO them
         - Have POTENTIAL_CAUSE relationships pointing FROM them (caused other events)
+        - Filters out normal log events (LOG_INFO) - only K8s Events
         """
         query = """
         MATCH (e:Episodic {client_id: $client_id})
         WHERE e.event_time > datetime() - duration({hours: $hours})
+          AND e.etype = 'k8s.event'
+          AND e.reason <> 'LOG_INFO'
           AND NOT EXISTS {
             MATCH (:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE {client_id: $client_id}]->(e)
           }
