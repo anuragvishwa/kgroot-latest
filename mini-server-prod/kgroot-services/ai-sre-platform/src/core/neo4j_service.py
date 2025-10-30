@@ -100,7 +100,8 @@ class Neo4jService:
         Returns the path from root cause to target event
         """
         query = """
-        MATCH path = (root:Episodic {client_id: $client_id})-[pc:POTENTIAL_CAUSE*1..$max_hops {client_id: $client_id}]->(target:Episodic {eid: $event_id, client_id: $client_id})
+        MATCH path = (root:Episodic {client_id: $client_id})-[pc:POTENTIAL_CAUSE*1..3]->(target:Episodic {eid: $event_id, client_id: $client_id})
+        WHERE ALL(rel IN relationships(path) WHERE rel.client_id = $client_id)
 
         WITH
           root,
@@ -165,7 +166,8 @@ class Neo4jService:
     ) -> List[Dict[str, Any]]:
         """Get all events affected by a root cause (blast radius)"""
         query = """
-        MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[:POTENTIAL_CAUSE* {client_id: $client_id}]->(affected:Episodic {client_id: $client_id})
+        MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[:POTENTIAL_CAUSE*]->(affected:Episodic {client_id: $client_id})
+        WHERE ALL(rel IN relationships(path) WHERE rel.client_id = $client_id)
 
         WITH
           affected,
@@ -224,7 +226,8 @@ class Neo4jService:
 
         OPTIONAL MATCH (e1)-[:ABOUT]->(r1:Resource {client_id: $client_id})
         OPTIONAL MATCH (e2)-[:ABOUT]->(r2:Resource {client_id: $client_id})
-        OPTIONAL MATCH topology_path = (r1)-[:SELECTS|RUNS_ON|CONTROLS* {client_id: $client_id}]-(r2)
+        OPTIONAL MATCH topology_path = (r1)-[:SELECTS|RUNS_ON|CONTROLS*]-(r2)
+        WHERE ALL(rel IN relationships(topology_path) WHERE rel.client_id = $client_id)
 
         RETURN
           e1.reason as cause_reason,
