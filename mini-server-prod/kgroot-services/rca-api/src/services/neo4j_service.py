@@ -147,17 +147,17 @@ class Neo4jService:
         limit: int = 50
     ) -> List[Dict[str, Any]]:
         """
-        Find all events affected by a root cause
+        Find all events affected by a root cause (limited to 1-3 hops for performance)
         """
         query = """
-        MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[rels:POTENTIAL_CAUSE*1..10]->(affected:Episodic {client_id: $client_id})
+        MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[rels:POTENTIAL_CAUSE*1..3]->(affected:Episodic {client_id: $client_id})
         WHERE all(rel in rels WHERE rel.client_id = $client_id)
           AND all(n in nodes(path) WHERE n.client_id = $client_id)
 
-        WITH
+        WITH DISTINCT
           affected,
-          min(length(path)) as min_hops,
-          max([rel IN relationships(path) | rel.confidence]) as max_confidence
+          length(path) as min_hops,
+          [rel IN relationships(path) | rel.confidence][0] as max_confidence
 
         OPTIONAL MATCH (affected)-[:ABOUT]->(r:Resource {client_id: $client_id})
 
@@ -169,8 +169,8 @@ class Neo4jService:
           r.ns as namespace,
           affected.event_time as timestamp,
           min_hops as distance_from_root,
-          max_confidence as confidence
-        ORDER BY min_hops ASC, max_confidence DESC
+          COALESCE(max_confidence, 0.5) as confidence
+        ORDER BY min_hops ASC, confidence DESC
         LIMIT $limit
         """
 
