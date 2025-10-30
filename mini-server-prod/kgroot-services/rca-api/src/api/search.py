@@ -58,9 +58,13 @@ async def semantic_search(request: SearchRequest):
 
             # Apply time range filter
             if request.time_range_hours and metadata.get('timestamp'):
-                from datetime import datetime, timedelta
-                cutoff = datetime.now() - timedelta(hours=request.time_range_hours)
-                if metadata['timestamp'] < cutoff:
+                from datetime import datetime, timedelta, timezone
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=request.time_range_hours)
+                item_timestamp = metadata['timestamp']
+                # Make timestamp timezone-aware if it isn't
+                if item_timestamp.tzinfo is None:
+                    item_timestamp = item_timestamp.replace(tzinfo=timezone.utc)
+                if item_timestamp < cutoff:
                     continue
 
             # Apply namespace filter
