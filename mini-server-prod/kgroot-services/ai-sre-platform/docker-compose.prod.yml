@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  # AI SRE Platform API (connects to existing Neo4j)
+  ai-sre-api:
+    build: .
+    container_name: ai-sre-api
+    ports:
+      - "8084:8000"
+    environment:
+      - NEO4J_URI=bolt://172.17.0.1:7687  # Docker host network (existing Neo4j)
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-5}
+      - LOG_LEVEL=INFO
+    network_mode: bridge
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
