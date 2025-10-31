@@ -264,10 +264,14 @@ class AIRCAOrchestrator:
 Analyze the findings from multiple specialized agents and provide a comprehensive RCA report.
 
 Focus on:
-1. Identifying the PRIMARY root cause (not just symptoms)
-2. Explaining the causal chain (how failure propagated)
-3. Quantifying blast radius (impact scope)
-4. Providing actionable remediation steps
+1. Identifying the TOP 3 MOST LIKELY root causes (ranked by confidence, not just symptoms)
+2. For EACH root cause, provide specific remediation steps
+3. Explaining the causal chain (how failure propagated)
+4. Quantifying blast radius (impact scope)
+5. Providing confidence scores for each hypothesis
+
+IMPORTANT: Return AT LEAST 3 root cause hypotheses if multiple potential causes exist in the data.
+Each hypothesis should have different confidence levels based on evidence strength.
 
 Be concise but thorough. Use technical language. Base conclusions ONLY on provided data."""
 
@@ -292,9 +296,15 @@ Provide a JSON response with:
       "event_id": "...",
       "reason": "...",
       "resource": "...",
-      "explanation": "Why this is the root cause",
-      "confidence": 0.0-1.0
-    }}
+      "explanation": "Why this is the root cause and causal chain",
+      "confidence": 0.0-1.0,
+      "remediation_steps": [
+        "1. Specific action for this root cause",
+        "2. Next step",
+        "3. Validation step"
+      ]
+    }},
+    // MUST include at least 3 hypotheses if data supports it
   ],
   "contributing_factors": ["factor 1", "factor 2", ...],
   "blast_radius": {{
