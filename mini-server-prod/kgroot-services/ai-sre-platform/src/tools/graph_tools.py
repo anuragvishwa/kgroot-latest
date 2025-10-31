@@ -32,13 +32,19 @@ class Neo4jRootCauseTool(BaseTool):
             client_id = params['client_id']
             time_range_hours = params.get('time_range_hours', 24)
             limit = params.get('limit', 10)
+            namespace = params.get('namespace')
+            from_time = params.get('from_time')
+            to_time = params.get('to_time')
 
-            logger.info(f"Finding root causes for {client_id}, last {time_range_hours}h")
+            logger.info(f"Finding root causes for {client_id}, namespace={namespace}, time_range={time_range_hours}h, from_time={from_time}, to_time={to_time}")
 
             root_causes = self.neo4j.find_root_causes(
                 client_id=client_id,
                 time_range_hours=time_range_hours,
-                limit=limit
+                limit=limit,
+                namespace=namespace,
+                from_time=from_time,
+                to_time=to_time
             )
 
             return {
