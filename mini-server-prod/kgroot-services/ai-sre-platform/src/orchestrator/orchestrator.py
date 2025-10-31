@@ -302,7 +302,28 @@ Provide a JSON response with:
         "1. Specific action for this root cause",
         "2. Next step",
         "3. Validation step"
-      ]
+      ],
+      "commands": [
+        {{
+          "purpose": "Inspect the issue",
+          "command": "kubectl describe pod <pod-name> -n <namespace>",
+          "expected_output": "What to look for in output"
+        }},
+        {{
+          "purpose": "Fix the issue",
+          "command": "kubectl delete pod <pod-name> -n <namespace>",
+          "expected_output": "pod deleted, new pod running"
+        }},
+        {{
+          "purpose": "Validate fix",
+          "command": "kubectl get pods -n <namespace> -w",
+          "expected_output": "All pods Running/Ready"
+        }}
+      ],
+      "topology": {{
+        "affected_resources": ["Service/...", "Pod/...", "Node/..."],
+        "dependencies": "Upstream: [...], Downstream: [...]"
+      }}
     }},
     // MUST include at least 3 hypotheses if data supports it
   ],

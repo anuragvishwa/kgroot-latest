@@ -60,10 +60,18 @@ class GraphAgent(BaseAgent):
 
             logger.info(f"GraphAgent using time_range_hours={time_range_hours}")
 
-            # Step 1: Find root causes
+            # Extract namespace filter if provided
+            namespace = scope.get('namespace')
+            if namespace:
+                logger.info(f"GraphAgent filtering to namespace={namespace}")
+
+            # Step 1: Find root causes dynamically (no event_id required!)
             root_causes_result = await self._call_tool("neo4j_find_root_causes", {
                 "client_id": tenant_id,
                 "time_range_hours": time_range_hours,
+                "namespace": namespace,
+                "from_time": time_window_start,
+                "to_time": time_window_end,
                 "limit": 10
             })
 
@@ -87,45 +95,49 @@ class GraphAgent(BaseAgent):
                     confidence=0.85  # Base confidence from graph analysis
                 ))
 
-            # Step 2: Get causal chains for top root causes
+            # Step 2: Get causal chains for ALL top root causes (not just #1)
             if root_causes:
-                top_root_cause = root_causes[0]
+                # Analyze top 3 root causes in detail for better RCA
+                for idx, root_cause in enumerate(root_causes[:3]):
+                    logger.info(f"Analyzing root cause #{idx+1}: {root_cause['event_id']}")
 
-                # Get causal chain from this root cause
-                chain_result = await self._call_tool("neo4j_get_causal_chain", {
-                    "event_id": top_root_cause['event_id'],
-                    "client_id": tenant_id,
-                    "max_hops": 3
-                })
+                    # Get causal chain for this root cause
+                    chain_result = await self._call_tool("neo4j_get_causal_chain", {
+                        "event_id": root_cause['event_id'],
+                        "client_id": tenant_id,
+                        "max_hops": 3
+                    })
 
-                if chain_result['success'] and chain_result['data']:
-                    findings.append(AgentFinding(
-                        kind="causal_chain",
-                        detail={
-                            "root_cause": top_root_cause,
-                            "chain": chain_result['data']
-                        },
-                        confidence=0.90
-                    ))
+                    if chain_result['success'] and chain_result['data']:
+                        findings.append(AgentFinding(
+                            kind="causal_chain",
+                            detail={
+                                "root_cause": root_cause,
+                                "chain": chain_result['data'],
+                                "rank": idx + 1
+                            },
+                            confidence=0.90 - (idx * 0.05)  # Slightly lower confidence for lower-ranked causes
+                        ))
 
-                # Step 3: Get blast radius
-                blast_radius_result = await self._call_tool("neo4j_get_blast_radius", {
-                    "root_event_id": top_root_cause['event_id'],
-                    "client_id": tenant_id,
-                    "limit": 50
-                })
+                    # Get blast radius for this root cause
+                    blast_radius_result = await self._call_tool("neo4j_get_blast_radius", {
+                        "root_event_id": root_cause['event_id'],
+                        "client_id": tenant_id,
+                        "limit": 50
+                    })
 
-                if blast_radius_result['success']:
-                    affected_count = blast_radius_result['affected_count']
-                    findings.append(AgentFinding(
-                        kind="blast_radius",
-                        detail={
-                            "root_cause": top_root_cause,
-                            "affected_events": affected_count,
-                            "sample_affected": blast_radius_result['data'][:10]
-                        },
-                        confidence=0.88
-                    ))
+                    if blast_radius_result['success']:
+                        affected_count = blast_radius_result['affected_count']
+                        findings.append(AgentFinding(
+                            kind="blast_radius",
+                            detail={
+                                "root_cause": root_cause,
+                                "affected_events": affected_count,
+                                "sample_affected": blast_radius_result['data'][:10],
+                                "rank": idx + 1
+                            },
+                            confidence=0.88 - (idx * 0.05)
+                        ))
 
             # Step 4: Detect cross-service failures
             cross_service_result = await self._call_tool("neo4j_get_cross_service_failures", {

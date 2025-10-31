@@ -33,26 +33,40 @@ class Neo4jService:
         client_id: str,
         time_range_hours: int = 24,
         limit: int = 10,
-        max_upstream_causes: int = 10
+        max_upstream_causes: int = 10,
+        namespace: Optional[str] = None,
+        from_time: Optional[datetime] = None,
+        to_time: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
-        Find likely root causes using tiered strategy:
+        Dynamically find root causes WITHOUT requiring specific event_id.
 
-        1. Primary: Events with ≤10 upstream causes (early in causal chain)
+        Works for ANY:
+        - Time range (configurable hours, or explicit from_time/to_time)
+        - Namespace (optional filter)
+        - Tenant (client_id)
+
+        Strategy:
+        1. Find events with ≤10 upstream causes (early in causal chain)
         2. Sort by: fewest upstream first, then highest blast radius
-
-        Filters out normal events (Pulled, Created, Started, Scheduled, Completed, SuccessfulCreate)
-        Includes actual failures: BackOff, Failed, Unhealthy, FailedMount, FailedScheduling, Pulling
+        3. Filter out normal operations (Pulled, Created, Started, etc.)
+        4. Include actual failures (BackOff, Failed, Unhealthy, OOMKilled, etc.)
         """
         query = """
         MATCH (e:Episodic {client_id: $client_id})
-        WHERE e.event_time > datetime() - duration({hours: $hours})
-          AND e.etype = 'k8s.event'
+        WHERE e.event_time > $from_time
+          AND e.event_time <= $to_time
+          AND e.etype IN ['k8s.event', 'k8s.log']
           AND NOT e.reason IN ['Pulled', 'Created', 'Started', 'Scheduled', 'Completed',
-                               'SuccessfulCreate', 'SuccessfulDelete', 'Killing', 'SawCompletedJob',
-                               'LOG_INFO']
+                               'SuccessfulCreate', 'SuccessfulDelete', 'Killing', 'SawCompletedJob']
 
-        OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource {client_id: $client_id})
+        // Flexible Resource matching: works with or without client_id
+        OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource)
+        WHERE r.client_id = $client_id OR (r.client_id IS NULL AND r.ns IS NOT NULL)
+
+        // Optional namespace filter
+        WHERE $namespace IS NULL OR r.ns = $namespace
+
         OPTIONAL MATCH (upstream:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE {client_id: $client_id}]->(e)
         OPTIONAL MATCH (e)-[:POTENTIAL_CAUSE {client_id: $client_id}]->(downstream:Episodic {client_id: $client_id})
 
@@ -75,11 +89,19 @@ class Neo4jService:
         LIMIT $limit
         """
 
+        # Calculate time range
+        if not to_time:
+            to_time = datetime.utcnow()
+        if not from_time:
+            from_time = to_time - timedelta(hours=time_range_hours)
+
         with self.driver.session() as session:
             result = session.run(
                 query,
                 client_id=client_id,
-                hours=time_range_hours,
+                from_time=from_time,
+                to_time=to_time,
+                namespace=namespace,
                 limit=limit,
                 max_upstream=max_upstream_causes
             )
@@ -132,7 +154,9 @@ class Neo4jService:
           CASE WHEN idx < size(relationships(path)) THEN relationships(path)[idx] ELSE null END as next_rel,
           path_confidence
 
-        OPTIONAL MATCH (event)-[:ABOUT]->(r:Resource {client_id: $client_id})
+        // Flexible Resource matching
+        OPTIONAL MATCH (event)-[:ABOUT]->(r:Resource)
+        WHERE r.client_id = $client_id OR (r.client_id IS NULL AND r.ns IS NOT NULL)
 
         RETURN
           idx + 1 as step,
@@ -236,10 +260,17 @@ class Neo4jService:
         WHERE pc.distance_score IN [0.85, 0.70, 0.55]
           AND e1.event_time > datetime() - duration({hours: $hours})
 
-        OPTIONAL MATCH (e1)-[:ABOUT]->(r1:Resource {client_id: $client_id})
-        OPTIONAL MATCH (e2)-[:ABOUT]->(r2:Resource {client_id: $client_id})
-        OPTIONAL MATCH topology_path = (r1)-[:SELECTS|RUNS_ON|CONTROLS*]-(r2)
-        WHERE ALL(rel IN relationships(topology_path) WHERE rel.client_id = $client_id)
+        // Flexible Resource matching: works with or without client_id
+        OPTIONAL MATCH (e1)-[:ABOUT]->(r1:Resource)
+        WHERE r1.client_id = $client_id OR (r1.client_id IS NULL AND r1.ns IS NOT NULL)
+
+        OPTIONAL MATCH (e2)-[:ABOUT]->(r2:Resource)
+        WHERE r2.client_id = $client_id OR (r2.client_id IS NULL AND r2.ns IS NOT NULL)
+
+        // Flexible topology matching: works with or without client_id on relationships
+        OPTIONAL MATCH topology_path = (r1)-[:SELECTS|RUNS_ON|CONTROLS*1..3]-(r2)
+        WHERE ALL(rel IN relationships(topology_path)
+          WHERE rel.client_id = $client_id OR rel.client_id IS NULL)
 
         RETURN
           e1.reason as cause_reason,
