@@ -58,12 +58,15 @@ class Neo4jService:
           AND e.event_time <= $to_time
           AND e.etype IN ['k8s.event', 'k8s.log']
           AND NOT e.reason IN ['Pulled', 'Created', 'Started', 'Scheduled', 'Completed',
-                               'SuccessfulCreate', 'SuccessfulDelete', 'Killing', 'SawCompletedJob']
+                               'SuccessfulCreate', 'SuccessfulDelete', 'Killing', 'SawCompletedJob', 'LOG_INFO']
 
         // Flexible Resource matching: works with or without client_id
         OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource)
         WHERE (r.client_id = $client_id OR (r.client_id IS NULL AND r.ns IS NOT NULL))
-          AND ($namespace IS NULL OR r.ns = $namespace)
+
+        // When namespace is specified, require the resource to be in that namespace
+        WITH e, r
+        WHERE $namespace IS NULL OR r.ns = $namespace
 
         OPTIONAL MATCH (upstream:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE {client_id: $client_id}]->(e)
         OPTIONAL MATCH (e)-[:POTENTIAL_CAUSE {client_id: $client_id}]->(downstream:Episodic {client_id: $client_id})
