@@ -44,10 +44,26 @@ class GraphAgent(BaseAgent):
             tenant_id = scope['tenant_id']
             logger.info(f"GraphAgent investigating for tenant {tenant_id}")
 
+            # Calculate time range from scope
+            from datetime import datetime
+            time_window_start = scope.get('time_window_start')
+            time_window_end = scope.get('time_window_end')
+
+            if time_window_start and time_window_end:
+                if isinstance(time_window_start, str):
+                    time_window_start = datetime.fromisoformat(time_window_start.replace('Z', '+00:00'))
+                if isinstance(time_window_end, str):
+                    time_window_end = datetime.fromisoformat(time_window_end.replace('Z', '+00:00'))
+                time_range_hours = int((time_window_end - time_window_start).total_seconds() / 3600)
+            else:
+                time_range_hours = 24  # Default fallback
+
+            logger.info(f"GraphAgent using time_range_hours={time_range_hours}")
+
             # Step 1: Find root causes
             root_causes_result = await self._call_tool("neo4j_find_root_causes", {
                 "client_id": tenant_id,
-                "time_range_hours": 24,
+                "time_range_hours": time_range_hours,
                 "limit": 10
             })
 
@@ -114,7 +130,7 @@ class GraphAgent(BaseAgent):
             # Step 4: Detect cross-service failures
             cross_service_result = await self._call_tool("neo4j_get_cross_service_failures", {
                 "client_id": tenant_id,
-                "time_range_hours": 24,
+                "time_range_hours": time_range_hours,
                 "limit": 20
             })
 

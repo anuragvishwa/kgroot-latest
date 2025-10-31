@@ -317,6 +317,10 @@ class Neo4jService:
         MATCH (e:Episodic {client_id: $client_id})
         WHERE ($time_range_hours IS NULL OR e.event_time > datetime() - duration({hours: $time_range_hours}))
 
+        // Optional: Filter to events with resource context only
+        // Uncomment the next line to exclude log entries without resources
+        // AND EXISTS((e)-[:ABOUT]->(:Resource))
+
         OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource {client_id: $client_id})
 
         RETURN
