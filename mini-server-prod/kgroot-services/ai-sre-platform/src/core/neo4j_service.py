@@ -62,10 +62,8 @@ class Neo4jService:
 
         // Flexible Resource matching: works with or without client_id
         OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource)
-        WHERE r.client_id = $client_id OR (r.client_id IS NULL AND r.ns IS NOT NULL)
-
-        // Optional namespace filter
-        WHERE $namespace IS NULL OR r.ns = $namespace
+        WHERE (r.client_id = $client_id OR (r.client_id IS NULL AND r.ns IS NOT NULL))
+          AND ($namespace IS NULL OR r.ns = $namespace)
 
         OPTIONAL MATCH (upstream:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE {client_id: $client_id}]->(e)
         OPTIONAL MATCH (e)-[:POTENTIAL_CAUSE {client_id: $client_id}]->(downstream:Episodic {client_id: $client_id})
