@@ -12,9 +12,15 @@ neo4j==5.14.0
 # OpenAI (for GPT-5)
 openai>=1.55.0
 
+# Anthropic (for Claude Agent SDK - incident resolution)
+anthropic>=0.40.0
+
 # Async
 aiohttp==3.9.1
 asyncio==3.4.3
+
+# YAML parsing (for rollback manager)
+pyyaml==6.0.1
 
 # Logging
 python-json-logger==2.0.7

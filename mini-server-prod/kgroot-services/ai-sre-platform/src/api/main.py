@@ -43,10 +43,12 @@ app.add_middleware(
 
 # Import and include routers
 from src.api import catalog, rca, health_monitoring
+from src.incident_resolver import api as incident_resolver_api
 
 app.include_router(catalog.router, prefix="/api/v1/catalog", tags=["Catalog"])
 app.include_router(rca.router, prefix="/api/v1/rca", tags=["RCA"])
 app.include_router(health_monitoring.router, prefix="/api/v1/health", tags=["Health"])
+app.include_router(incident_resolver_api.router, prefix="/api/v1/incident", tags=["Incident Resolution"])
 
 # Global orchestrator
 orchestrator: Optional[AIRCAOrchestrator] = None
@@ -107,6 +109,13 @@ async def startup_event():
         openai_api_key=openai_api_key,
         model=model,
         enable_ai_synthesis=enable_ai_synthesis
+    )
+
+    # Initialize incident resolution services
+    logger.info("Initializing incident resolution services...")
+    incident_resolver_api.initialize_services(
+        neo4j_service=neo4j_service,
+        base_url="http://localhost:8084"
     )
 
     logger.info("=== AI SRE Platform ready ===")
