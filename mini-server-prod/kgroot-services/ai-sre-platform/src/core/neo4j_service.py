@@ -2,7 +2,7 @@
 
 from neo4j import GraphDatabase, Driver
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -91,11 +91,17 @@ class Neo4jService:
         LIMIT $limit
         """
 
-        # Calculate time range
+        # Calculate time range with timezone-aware datetime (UTC)
         if not to_time:
-            to_time = datetime.utcnow()
+            to_time = datetime.now(timezone.utc)
         if not from_time:
             from_time = to_time - timedelta(hours=time_range_hours)
+
+        # Ensure datetimes are timezone-aware (if passed as naive, add UTC)
+        if to_time.tzinfo is None:
+            to_time = to_time.replace(tzinfo=timezone.utc)
+        if from_time.tzinfo is None:
+            from_time = from_time.replace(tzinfo=timezone.utc)
 
         # DEBUG: Log parameters
         logger.info(f"=== FIND_ROOT_CAUSES DEBUG ===")
