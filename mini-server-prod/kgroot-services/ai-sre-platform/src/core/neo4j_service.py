@@ -108,6 +108,17 @@ class Neo4jService:
         logger.info(f"Passing datetime objects directly to driver")
 
         with self.driver.session() as session:
+            # First, test with a simple count query to verify connection
+            test_query = """
+            MATCH (e:Episodic {client_id: $client_id})
+            WHERE e.event_time > $from_time AND e.event_time <= $to_time
+            RETURN count(e) as total_count
+            """
+            test_result = session.run(test_query, client_id=client_id, from_time=from_time, to_time=to_time)
+            test_record = test_result.single()
+            logger.info(f"TEST QUERY: Found {test_record['total_count']} total events in time range")
+
+            # Now run the full query
             result = session.run(
                 query,
                 client_id=client_id,
