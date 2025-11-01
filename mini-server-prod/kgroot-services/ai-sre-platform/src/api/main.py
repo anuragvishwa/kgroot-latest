@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 # FastAPI app
 app = FastAPI(
     title="AI SRE Platform",
-    description="Multi-agent AI system for automated root cause analysis",
-    version="1.0.0"
+    description="Multi-agent AI system for automated root cause analysis with GraphRAG",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 # CORS
@@ -38,6 +40,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Import and include routers
+from src.api import catalog, rca, health_monitoring
+
+app.include_router(catalog.router, prefix="/api/v1/catalog", tags=["Catalog"])
+app.include_router(rca.router, prefix="/api/v1/rca", tags=["RCA"])
+app.include_router(health_monitoring.router, prefix="/api/v1/health", tags=["Health"])
 
 # Global orchestrator
 orchestrator: Optional[AIRCAOrchestrator] = None
