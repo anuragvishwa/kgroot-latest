@@ -69,8 +69,9 @@ class Neo4jService:
         WITH e, r
         WHERE $namespace IS NULL OR r.ns = $namespace
 
-        OPTIONAL MATCH (upstream:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE {client_id: $client_id}]->(e)
-        OPTIONAL MATCH (e)-[:POTENTIAL_CAUSE {client_id: $client_id}]->(downstream:Episodic {client_id: $client_id})
+        // Flexible POTENTIAL_CAUSE matching: works with or without client_id on relationships
+        OPTIONAL MATCH (upstream:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE]->(e)
+        OPTIONAL MATCH (e)-[:POTENTIAL_CAUSE]->(downstream:Episodic {client_id: $client_id})
 
         WITH e, r,
              count(DISTINCT upstream) as upstream_count,
@@ -154,8 +155,7 @@ class Neo4jService:
         Returns the path from root cause to target event
         """
         query = """
-        MATCH path = (root:Episodic {client_id: $client_id})-[pc:POTENTIAL_CAUSE*1..3]->(target:Episodic {eid: $event_id, client_id: $client_id})
-        WHERE ALL(rel IN relationships(path) WHERE rel.client_id = $client_id)
+        MATCH path = (root:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE*1..3]->(target:Episodic {eid: $event_id, client_id: $client_id})
 
         WITH
           root,
@@ -224,7 +224,6 @@ class Neo4jService:
         """Get all events affected by a root cause (blast radius)"""
         query = """
         MATCH path = (root:Episodic {eid: $root_event_id, client_id: $client_id})-[:POTENTIAL_CAUSE*1..5]->(affected:Episodic {client_id: $client_id})
-        WHERE ALL(rel IN relationships(path) WHERE rel.client_id = $client_id)
 
         WITH
           affected,
@@ -277,7 +276,7 @@ class Neo4jService:
     ) -> List[Dict[str, Any]]:
         """Get failures that propagated across services (topology-enhanced)"""
         query = """
-        MATCH (e1:Episodic {client_id: $client_id})-[pc:POTENTIAL_CAUSE {client_id: $client_id}]->(e2:Episodic {client_id: $client_id})
+        MATCH (e1:Episodic {client_id: $client_id})-[pc:POTENTIAL_CAUSE]->(e2:Episodic {client_id: $client_id})
         WHERE pc.distance_score IN [0.85, 0.70, 0.55]
           AND e1.event_time > datetime() - duration({hours: $hours})
 
