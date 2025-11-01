@@ -120,10 +120,14 @@ class Neo4jService:
                 max_upstream=max_upstream_causes
             )
 
+            # Consume all records first to see what Neo4j returns
+            logger.info("Consuming Neo4j result...")
+            records = list(result)
+            logger.info(f"Neo4j driver returned {len(records)} raw records")
+
             root_causes = []
-            record_count = 0
-            for record in result:
-                record_count += 1
+            for idx, record in enumerate(records):
+                logger.info(f"Processing record {idx+1}: {dict(record)}")
                 root_causes.append({
                     "event_id": record["event_id"],
                     "reason": record["reason"],
@@ -136,8 +140,8 @@ class Neo4jService:
                 })
 
             # DEBUG: Log results
-            logger.info(f"Neo4j query returned {record_count} records")
-            if record_count > 0:
+            logger.info(f"Successfully parsed {len(root_causes)} root causes")
+            if root_causes:
                 logger.info(f"Sample result: {root_causes[0]}")
             logger.info(f"=== END FIND_ROOT_CAUSES DEBUG ===")
 
