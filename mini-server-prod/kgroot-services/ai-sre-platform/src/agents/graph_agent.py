@@ -54,7 +54,8 @@ class GraphAgent(BaseAgent):
                     time_window_start = datetime.fromisoformat(time_window_start.replace('Z', '+00:00'))
                 if isinstance(time_window_end, str):
                     time_window_end = datetime.fromisoformat(time_window_end.replace('Z', '+00:00'))
-                time_range_hours = int((time_window_end - time_window_start).total_seconds() / 3600)
+                # Keep as float to support minute-based searches
+                time_range_hours = (time_window_end - time_window_start).total_seconds() / 3600
             else:
                 time_range_hours = 24  # Default fallback
 
