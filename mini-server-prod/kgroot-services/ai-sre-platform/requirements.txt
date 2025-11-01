@@ -1,9 +1,9 @@
 # AI SRE Platform Dependencies
 
-# Core
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
+# Core - Updated versions to resolve anyio conflict
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.0
 python-dotenv==1.0.0
 
 # Neo4j
@@ -18,9 +18,9 @@ claude-agent-sdk>=0.1.0
 # AWS SDK (for Bedrock integration)
 boto3>=1.34.0
 
-# Async
+# Async - Compatible with claude-agent-sdk
+anyio>=4.0.0
 aiohttp==3.9.1
-asyncio==3.4.3
 
 # YAML parsing (for rollback manager)
 pyyaml==6.0.1
@@ -30,9 +30,9 @@ python-json-logger==2.0.7
 
 # Testing
 pytest==7.4.3
-pytest-asyncio==0.21.1
+pytest-asyncio==0.23.0
 pytest-cov==4.1.0
-httpx==0.25.2
+httpx==0.27.0
 
 # Development
 black==23.11.0
