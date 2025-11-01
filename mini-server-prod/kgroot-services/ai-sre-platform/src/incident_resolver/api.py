@@ -69,19 +69,21 @@ def initialize_services(neo4j_service=None, base_url: str = "http://localhost:80
     approval_engine = ApprovalEngine(default_timeout_seconds=300)
     token_budget_manager = TokenBudgetManager()
 
-    # Get API keys and AWS config from environment
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    # Get AWS config from environment for Claude Agent SDK
     use_bedrock = os.getenv("USE_BEDROCK", "true").lower() == "true"  # Default to Bedrock
     aws_region = os.getenv("AWS_REGION", "us-east-1")
+    kubectl_context = os.getenv("KUBECTL_CONTEXT")
+    base_cwd = os.getenv("AGENT_CWD", "/tmp/incident-resolver")
 
-    if not use_bedrock and not anthropic_api_key:
-        logger.warning("ANTHROPIC_API_KEY not set and USE_BEDROCK=false - remediation executor will be disabled")
+    # Create base directory for agent operations
+    os.makedirs(base_cwd, exist_ok=True)
 
     remediation_executor = RemediationExecutor(
-        anthropic_api_key=anthropic_api_key or "dummy",
+        kubectl_context=kubectl_context,
         token_budget_manager=token_budget_manager,
         use_bedrock=use_bedrock,
-        aws_region=aws_region
+        aws_region=aws_region,
+        base_cwd=base_cwd
     )
 
     rollback_manager = RollbackManager()

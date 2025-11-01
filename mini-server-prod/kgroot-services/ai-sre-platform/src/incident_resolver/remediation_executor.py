@@ -1,9 +1,12 @@
 """
 Remediation Executor - Executes remediation actions using Claude Agent SDK
+
+Uses the official Claude Agent SDK to execute remediation actions with real tool support.
+This enables Claude to actually run kubectl commands, edit files, and interact with the system.
 """
 
 import logging
-import asyncio
+import os
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -26,108 +29,260 @@ class RemediationResult:
     completed_at: str
     error: Optional[str] = None
     agent_transcript: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 class RemediationExecutor:
     """
     Executes remediation actions using Claude Agent SDK
 
+    This uses the official claude-agent-sdk to enable:
+    - Real tool execution (Bash, Read, Write, Edit, etc.)
+    - Conversation continuity across multiple steps
+    - Permission control via hooks
+    - Interrupt capability for long-running tasks
+
     Specialized agents:
-    - pod_restart: Haiku model, Bash tool
-    - config_fix: Sonnet model, Read/Edit/Bash tools
-    - resource_scale: Haiku model, Bash tool
-    - investigation: Sonnet model, Read/Bash/Grep/Glob tools
+    - pod_restart: Haiku model, Bash tool (fast kubectl operations)
+    - config_fix: Sonnet 4.5, Read/Edit/Bash tools (complex config changes)
+    - resource_scale: Haiku model, Bash tool (scaling operations)
+    - investigation: Sonnet 4.5, Read/Bash/Grep/Glob tools (diagnostics)
     """
 
-    # Agent configurations
+    # Agent configurations with tools
     AGENT_CONFIGS = {
         "pod_restart": {
             "model": "haiku",
             "tools": ["Bash"],
-            "description": "Restart pods to recover from failures"
+            "description": "Restart pods to recover from failures",
+            "permission_mode": "default"
         },
         "config_fix": {
             "model": "sonnet",
-            "tools": ["Read", "Edit", "Bash"],
-            "description": "Fix configuration issues in ConfigMaps, Secrets, or YAML"
+            "tools": ["Read", "Edit", "Bash", "Write"],
+            "description": "Fix configuration issues in ConfigMaps, Secrets, or YAML",
+            "permission_mode": "acceptEdits"
         },
         "resource_scale": {
             "model": "haiku",
-            "tools": ["Bash"],
-            "description": "Scale resources (Deployments, StatefulSets)"
+            "tools": ["Bash", "Read"],
+            "description": "Scale resources (Deployments, StatefulSets)",
+            "permission_mode": "default"
         },
         "investigation": {
             "model": "sonnet",
             "tools": ["Read", "Bash", "Grep", "Glob"],
-            "description": "Investigate issues without making changes"
+            "description": "Investigate issues without making changes",
+            "permission_mode": "default"
         }
     }
 
     def __init__(
         self,
-        anthropic_api_key: str,
         kubectl_context: Optional[str] = None,
         token_budget_manager=None,
         use_bedrock: bool = False,
-        aws_region: str = "us-east-1"
+        aws_region: str = "us-east-1",
+        base_cwd: Optional[str] = None
     ):
         """
         Args:
-            anthropic_api_key: Anthropic API key for Claude (ignored if use_bedrock=True)
             kubectl_context: Optional kubectl context for multi-cluster
             token_budget_manager: TokenBudgetManager for tracking usage
             use_bedrock: Use AWS Bedrock instead of direct Anthropic API
             aws_region: AWS region for Bedrock (default: us-east-1)
+            base_cwd: Base working directory for Claude Agent
         """
-        self.api_key = anthropic_api_key
         self.kubectl_context = kubectl_context
         self.token_budget_manager = token_budget_manager
         self.use_bedrock = use_bedrock
         self.aws_region = aws_region
+        self.base_cwd = base_cwd or os.getcwd()
         self.active_executions: Dict[str, Dict[str, Any]] = {}
 
-        # Model ID mappings for Bedrock
+        # Model mappings for Bedrock vs Direct API
         self.bedrock_models = {
-            "haiku": "anthropic.claude-3-haiku-20240307-v1:0",
-            "sonnet": "us.anthropic.claude-sonnet-4-5-v1:0",  # Sonnet 4.5
-            "sonnet-3.5": "anthropic.claude-3-5-sonnet-20241022-v2:0"  # Sonnet 3.5
+            "haiku": "haiku",  # SDK handles Bedrock model IDs
+            "sonnet": "sonnet",
+            "opus": "opus"
         }
         self.direct_models = {
-            "haiku": "claude-3-haiku-20240307",
-            "sonnet": "claude-3-5-sonnet-20241022",
-            "sonnet-3.5": "claude-3-5-sonnet-20241022"
+            "haiku": "haiku",
+            "sonnet": "sonnet",
+            "opus": "opus"
         }
 
-        # Initialize client based on provider
+        # Verify Claude Agent SDK is installed
         try:
-            if use_bedrock:
-                # AWS Bedrock integration
-                import boto3
-                from anthropic import AnthropicBedrock
-
-                # Initialize Anthropic Bedrock client
-                # Uses AWS credentials from environment (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-                # or IAM role
-                self.anthropic_client = AnthropicBedrock(
-                    aws_region=aws_region
-                )
-                logger.info(f"Claude Agent SDK initialized via AWS Bedrock (region: {aws_region})")
-            else:
-                # Direct Anthropic API
-                from anthropic import Anthropic
-                self.anthropic_client = Anthropic(api_key=anthropic_api_key)
-                logger.info("Claude Agent SDK initialized via Anthropic API")
+            from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
+            self.sdk_available = True
+            logger.info(f"Claude Agent SDK initialized (use_bedrock={use_bedrock}, region={aws_region})")
         except ImportError as e:
-            logger.error(f"Failed to import required packages: {e}")
-            logger.error("Install with: pip install anthropic boto3")
-            self.anthropic_client = None
+            logger.error(f"Claude Agent SDK not installed: {e}")
+            logger.error("Install with: pip install claude-agent-sdk")
+            self.sdk_available = False
+
+        # Set up environment for Bedrock if needed
+        if use_bedrock:
+            # Claude Agent SDK will use AWS credentials from environment
+            os.environ["USE_BEDROCK"] = "true"
+            os.environ["AWS_REGION"] = aws_region
+            logger.info(f"Configured for AWS Bedrock in region {aws_region}")
 
     def _get_model_id(self, model_type: str) -> str:
-        """Get correct model ID based on provider"""
-        if self.use_bedrock:
-            return self.bedrock_models.get(model_type, self.bedrock_models["sonnet"])
-        else:
-            return self.direct_models.get(model_type, self.direct_models["sonnet"])
+        """Get correct model ID for the SDK"""
+        # Claude Agent SDK uses model names: "haiku", "sonnet", "opus"
+        # It handles Bedrock vs direct API internally based on environment
+        return model_type
+
+    def _build_system_prompt(
+        self,
+        action_type: str,
+        action_description: str,
+        affected_resources: List[Dict[str, Any]],
+        context: Dict[str, Any],
+        namespace: str
+    ) -> str:
+        """Build comprehensive system prompt for the agent"""
+
+        config = self.AGENT_CONFIGS.get(action_type, self.AGENT_CONFIGS["investigation"])
+
+        # Build resource list
+        resource_list = [
+            f"- {r.get('kind', 'Unknown')}/{r.get('name', 'unknown')}"
+            for r in affected_resources
+        ]
+
+        # Extract context information
+        error_summary = context.get("error_summary", {})
+        root_causes = context.get("root_causes", [])
+        health_status = context.get("health_status", {})
+
+        # Build kubectl context flag
+        kubectl_context_flag = f"--context={self.kubectl_context}" if self.kubectl_context else ""
+
+        # Base prompt
+        prompt = f"""You are a Kubernetes SRE assistant helping resolve production incidents.
+
+**Action**: {action_description}
+
+**Namespace**: {namespace}
+**Kubectl Context**: {self.kubectl_context or "default"}
+
+**Affected Resources**:
+{chr(10).join(resource_list) if resource_list else "- No specific resources identified"}
+
+**Error Summary**:
+- Severity: {error_summary.get('overall_severity', 'UNKNOWN')}
+- Total incidents: {error_summary.get('total_incidents', 0)}
+- Error types: {', '.join(error_summary.get('error_types', {}).keys()) or 'None identified'}
+
+**Root Causes** (Top 3):
+{chr(10).join([f"{i+1}. {rc.get('reason', 'Unknown')}: {rc.get('message', 'No details')}" for i, rc in enumerate(root_causes[:3])]) if root_causes else "- No root causes identified"}
+
+**Health Status**:
+- Overall: {health_status.get('overall_status', 'unknown')}
+- Failed pods: {health_status.get('pod_status', {}).get('Failed', 0)}
+- Running pods: {health_status.get('pod_status', {}).get('Running', 0)}
+
+"""
+
+        # Action-specific instructions
+        if action_type == "pod_restart":
+            prompt += f"""
+**Task**: Restart the affected pods to recover from failures.
+
+**Steps**:
+1. Use `kubectl get pods -n {namespace} {kubectl_context_flag}` to list pods
+2. Identify pods with errors (CrashLoopBackOff, Error, etc.)
+3. For each failing pod:
+   - Delete it: `kubectl delete pod <pod-name> -n {namespace} {kubectl_context_flag}`
+   - Wait a moment for it to recreate
+   - Verify: `kubectl get pod <pod-name> -n {namespace} {kubectl_context_flag}`
+4. Check final status: `kubectl get pods -n {namespace} {kubectl_context_flag}`
+5. Report results clearly
+
+**Important**:
+- Only restart pods that are actually failing
+- Wait for pods to start recreating before moving to next one
+- Report any errors encountered
+"""
+
+        elif action_type == "config_fix":
+            prompt += f"""
+**Task**: Fix configuration issues in Kubernetes resources.
+
+**Steps**:
+1. Identify the problematic configuration:
+   - Use `kubectl get <resource> <name> -n {namespace} -o yaml {kubectl_context_flag}` to read current config
+   - Look for issues mentioned in error summary
+2. Fix the configuration:
+   - Save to a temp file
+   - Edit the problematic fields
+   - Apply: `kubectl apply -f <file> -n {namespace} {kubectl_context_flag}`
+3. Verify the fix:
+   - Check resource status: `kubectl get <resource> <name> -n {namespace} {kubectl_context_flag}`
+   - Check events: `kubectl get events -n {namespace} --field-selector involvedObject.name=<name> {kubectl_context_flag}`
+4. Report what was changed and the outcome
+
+**Important**:
+- Make minimal, targeted changes
+- Preserve existing configuration where possible
+- Verify changes work before completing
+"""
+
+        elif action_type == "resource_scale":
+            prompt += f"""
+**Task**: Scale Kubernetes resources (Deployments, StatefulSets, etc.).
+
+**Steps**:
+1. Check current replica count:
+   - `kubectl get deployment <name> -n {namespace} {kubectl_context_flag}`
+2. Determine target replica count based on error summary
+3. Scale the resource:
+   - `kubectl scale deployment <name> --replicas=<N> -n {namespace} {kubectl_context_flag}`
+4. Monitor the scaling:
+   - `kubectl rollout status deployment <name> -n {namespace} {kubectl_context_flag}`
+5. Verify pods are running:
+   - `kubectl get pods -n {namespace} -l app=<label> {kubectl_context_flag}`
+6. Report the scaling action and results
+
+**Important**:
+- Scale incrementally (don't jump from 1 to 100 replicas)
+- Verify each pod starts successfully
+- Consider resource limits and quotas
+"""
+
+        elif action_type == "investigation":
+            prompt += f"""
+**Task**: Investigate the incident using READ-ONLY commands.
+
+**Steps**:
+1. List pods: `kubectl get pods -n {namespace} {kubectl_context_flag}`
+2. Check failing pods:
+   - Describe: `kubectl describe pod <name> -n {namespace} {kubectl_context_flag}`
+   - Logs: `kubectl logs <name> -n {namespace} --tail=100 {kubectl_context_flag}`
+   - Previous logs if crashed: `kubectl logs <name> -n {namespace} --previous {kubectl_context_flag}`
+3. Check events: `kubectl get events -n {namespace} --sort-by='.lastTimestamp' {kubectl_context_flag}`
+4. Check resource status:
+   - Deployments: `kubectl get deployments -n {namespace} {kubectl_context_flag}`
+   - Services: `kubectl get services -n {namespace} {kubectl_context_flag}`
+5. Analyze patterns and provide recommendations
+
+**Important**:
+- This is READ-ONLY investigation
+- Do NOT make any changes
+- Provide clear diagnosis and recommendations
+"""
+
+        prompt += f"""
+
+**Available Tools**: {', '.join(config['tools'])}
+
+Execute the task step by step. Report progress and results clearly.
+"""
+
+        return prompt
 
     async def execute_remediation(
         self,
@@ -140,7 +295,7 @@ class RemediationExecutor:
         client_id: str
     ) -> RemediationResult:
         """
-        Execute remediation action using appropriate Claude agent
+        Execute remediation action using Claude Agent SDK
 
         Args:
             resolution_id: Incident resolution ID
@@ -158,6 +313,21 @@ class RemediationExecutor:
         started_at = datetime.now(timezone.utc).isoformat()
 
         logger.info(f"Starting remediation execution {execution_id}: {action_type}")
+
+        # Validate SDK availability
+        if not self.sdk_available:
+            return RemediationResult(
+                execution_id=execution_id,
+                resolution_id=resolution_id,
+                action_type=action_type,
+                success=False,
+                output="",
+                commands_executed=[],
+                token_usage={},
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc).isoformat(),
+                error="Claude Agent SDK not installed"
+            )
 
         # Validate action type
         if action_type not in self.AGENT_CONFIGS:
@@ -183,37 +353,101 @@ class RemediationExecutor:
         }
 
         try:
-            # Check if Claude SDK is available
-            if not self.anthropic_client:
-                raise RuntimeError("Claude Agent SDK not initialized")
+            # Import SDK
+            from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, AssistantMessage, TextBlock, ToolUseBlock, ToolResultBlock, ResultMessage
 
-            # Execute based on action type
-            if action_type == "pod_restart":
-                result = await self._execute_pod_restart(
-                    execution_id, resolution_id, affected_resources, namespace, client_id
-                )
-            elif action_type == "config_fix":
-                result = await self._execute_config_fix(
-                    execution_id, resolution_id, action_description, affected_resources,
-                    context, namespace, client_id
-                )
-            elif action_type == "resource_scale":
-                result = await self._execute_resource_scale(
-                    execution_id, resolution_id, action_description, affected_resources,
-                    namespace, client_id
-                )
-            elif action_type == "investigation":
-                result = await self._execute_investigation(
-                    execution_id, resolution_id, action_description, context, namespace, client_id
-                )
-            else:
-                raise ValueError(f"Unsupported action type: {action_type}")
+            # Get agent configuration
+            config = self.AGENT_CONFIGS[action_type]
+
+            # Build system prompt
+            system_prompt = self._build_system_prompt(
+                action_type, action_description, affected_resources, context, namespace
+            )
+
+            # Configure agent options
+            options = ClaudeAgentOptions(
+                model=self._get_model_id(config["model"]),
+                allowed_tools=config["tools"],
+                permission_mode=config["permission_mode"],
+                cwd=self.base_cwd,
+                system_prompt=system_prompt,
+                # Add kubectl context to environment if specified
+                env={
+                    "KUBECONFIG": os.environ.get("KUBECONFIG", ""),
+                    "KUBECTL_CONTEXT": self.kubectl_context or ""
+                } if self.kubectl_context else {}
+            )
+
+            # Execute with Claude Agent SDK
+            logger.info(f"[{execution_id}] Starting Claude Agent SDK client...")
+
+            output_lines = []
+            commands_executed = []
+            token_usage = {"input_tokens": 0, "output_tokens": 0}
+            session_id = None
+
+            async with ClaudeSDKClient(options=options) as client:
+                # Send the task
+                await client.query(action_description)
+
+                # Process responses
+                async for message in client.receive_response():
+                    # Assistant messages (text and thinking)
+                    if isinstance(message, AssistantMessage):
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                output_lines.append(block.text)
+                                logger.debug(f"[{execution_id}] Claude: {block.text[:100]}...")
+                            elif isinstance(block, ToolUseBlock):
+                                # Track tool usage
+                                commands_executed.append(f"{block.name}: {block.input}")
+                                logger.info(f"[{execution_id}] Tool: {block.name} with {block.input}")
+
+                    # Result message (final)
+                    elif isinstance(message, ResultMessage):
+                        session_id = message.session_id
+
+                        # Extract token usage
+                        if message.usage:
+                            token_usage = {
+                                "input_tokens": message.usage.get("input_tokens", 0),
+                                "output_tokens": message.usage.get("output_tokens", 0)
+                            }
+
+                        # Record token usage
+                        if self.token_budget_manager:
+                            self.token_budget_manager.record_usage(
+                                resolution_id,
+                                f"{action_type}_{execution_id}",
+                                token_usage["input_tokens"],
+                                token_usage["output_tokens"],
+                                model=config["model"]
+                            )
+
+                        # Check if successful
+                        success = not message.is_error
+
+                        logger.info(f"[{execution_id}] Completed: success={success}, tokens={token_usage['input_tokens'] + token_usage['output_tokens']}")
 
             # Mark as completed
             self.active_executions[execution_id]["status"] = "completed"
-            logger.info(f"Remediation execution {execution_id} completed: success={result.success}")
 
-            return result
+            # Build result
+            output = "\n".join(output_lines)
+
+            return RemediationResult(
+                execution_id=execution_id,
+                resolution_id=resolution_id,
+                action_type=action_type,
+                success=success,
+                output=output,
+                commands_executed=commands_executed,
+                token_usage=token_usage,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc).isoformat(),
+                agent_transcript=output,
+                session_id=session_id
+            )
 
         except Exception as e:
             logger.error(f"Remediation execution {execution_id} failed: {e}", exc_info=True)
@@ -223,383 +457,6 @@ class RemediationExecutor:
                 execution_id=execution_id,
                 resolution_id=resolution_id,
                 action_type=action_type,
-                success=False,
-                output="",
-                commands_executed=[],
-                token_usage={},
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc).isoformat(),
-                error=str(e)
-            )
-
-    async def _execute_pod_restart(
-        self,
-        execution_id: str,
-        resolution_id: str,
-        affected_resources: List[Dict[str, Any]],
-        namespace: str,
-        client_id: str
-    ) -> RemediationResult:
-        """Execute pod restart using Claude Haiku agent"""
-        started_at = datetime.now(timezone.utc).isoformat()
-
-        # Build prompt for agent
-        pod_list = [
-            f"- {r.get('kind', 'Pod')}/{r.get('name', 'unknown')}"
-            for r in affected_resources
-        ]
-
-        prompt = f"""You are a Kubernetes operations assistant. Your task is to restart the following pods in namespace '{namespace}':
-
-{chr(10).join(pod_list)}
-
-Execute the following steps:
-1. Delete each pod using kubectl delete pod <name> -n {namespace}
-2. Verify the pod is recreating by checking its status
-3. Wait for the new pod to be Running
-4. Report the results
-
-Use the Bash tool to execute kubectl commands.
-"""
-
-        # Use Claude Messages API (simulating agent behavior)
-        try:
-            response = self.anthropic_client.messages.create(
-                model=self._get_model_id("haiku"),
-                max_tokens=4096,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-
-            output = response.content[0].text
-            token_usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens
-            }
-
-            # Record token usage
-            if self.token_budget_manager:
-                self.token_budget_manager.record_usage(
-                    resolution_id,
-                    f"pod_restart_{execution_id}",
-                    token_usage["input_tokens"],
-                    token_usage["output_tokens"],
-                    model="haiku"
-                )
-
-            # Extract commands from output (simplified)
-            commands_executed = [
-                f"kubectl delete pod {r.get('name')} -n {namespace}"
-                for r in affected_resources
-                if r.get('kind') == 'Pod'
-            ]
-
-            return RemediationResult(
-                execution_id=execution_id,
-                resolution_id=resolution_id,
-                action_type="pod_restart",
-                success=True,
-                output=output,
-                commands_executed=commands_executed,
-                token_usage=token_usage,
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc).isoformat(),
-                agent_transcript=output
-            )
-
-        except Exception as e:
-            logger.error(f"Pod restart failed: {e}", exc_info=True)
-            return RemediationResult(
-                execution_id=execution_id,
-                resolution_id=resolution_id,
-                action_type="pod_restart",
-                success=False,
-                output="",
-                commands_executed=[],
-                token_usage={},
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc).isoformat(),
-                error=str(e)
-            )
-
-    async def _execute_config_fix(
-        self,
-        execution_id: str,
-        resolution_id: str,
-        action_description: str,
-        affected_resources: List[Dict[str, Any]],
-        context: Dict[str, Any],
-        namespace: str,
-        client_id: str
-    ) -> RemediationResult:
-        """Execute configuration fix using Claude Sonnet agent"""
-        started_at = datetime.now(timezone.utc).isoformat()
-
-        # Build comprehensive prompt
-        resource_list = [
-            f"- {r.get('kind', 'Unknown')}/{r.get('name', 'unknown')}"
-            for r in affected_resources
-        ]
-
-        error_summary = context.get("error_summary", {})
-        root_causes = context.get("root_causes", [])
-
-        prompt = f"""You are a Kubernetes configuration expert. Your task is to fix the following configuration issue:
-
-**Issue**: {action_description}
-
-**Affected Resources** (namespace: {namespace}):
-{chr(10).join(resource_list)}
-
-**Error Summary**:
-- Severity: {error_summary.get('overall_severity', 'UNKNOWN')}
-- Error types: {', '.join(error_summary.get('error_types', {}).keys())}
-
-**Root Causes**:
-{chr(10).join([f"- {rc.get('reason', 'Unknown')}: {rc.get('message', 'No message')}" for rc in root_causes[:3]])}
-
-Execute the following steps:
-1. Read the current configuration (ConfigMap, Deployment YAML, etc.)
-2. Identify the issue based on the error summary
-3. Fix the configuration using the Edit tool
-4. Apply the changes using kubectl apply
-5. Verify the fix worked
-
-Use Read, Edit, and Bash tools as needed.
-"""
-
-        try:
-            response = self.anthropic_client.messages.create(
-                model=self._get_model_id("sonnet"),
-                max_tokens=8192,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-
-            output = response.content[0].text
-            token_usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens
-            }
-
-            # Record token usage
-            if self.token_budget_manager:
-                self.token_budget_manager.record_usage(
-                    resolution_id,
-                    f"config_fix_{execution_id}",
-                    token_usage["input_tokens"],
-                    token_usage["output_tokens"],
-                    model="sonnet"
-                )
-
-            # Extract commands (simplified)
-            commands_executed = [
-                f"kubectl get {r.get('kind')} {r.get('name')} -n {namespace} -o yaml",
-                f"kubectl apply -f <edited-file> -n {namespace}"
-            ]
-
-            return RemediationResult(
-                execution_id=execution_id,
-                resolution_id=resolution_id,
-                action_type="config_fix",
-                success=True,
-                output=output,
-                commands_executed=commands_executed,
-                token_usage=token_usage,
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc).isoformat(),
-                agent_transcript=output
-            )
-
-        except Exception as e:
-            logger.error(f"Config fix failed: {e}", exc_info=True)
-            return RemediationResult(
-                execution_id=execution_id,
-                resolution_id=resolution_id,
-                action_type="config_fix",
-                success=False,
-                output="",
-                commands_executed=[],
-                token_usage={},
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc).isoformat(),
-                error=str(e)
-            )
-
-    async def _execute_resource_scale(
-        self,
-        execution_id: str,
-        resolution_id: str,
-        action_description: str,
-        affected_resources: List[Dict[str, Any]],
-        namespace: str,
-        client_id: str
-    ) -> RemediationResult:
-        """Execute resource scaling using Claude Haiku agent"""
-        started_at = datetime.now(timezone.utc).isoformat()
-
-        resource_list = [
-            f"- {r.get('kind', 'Unknown')}/{r.get('name', 'unknown')}"
-            for r in affected_resources
-        ]
-
-        prompt = f"""You are a Kubernetes scaling assistant. Your task is: {action_description}
-
-**Resources to scale** (namespace: {namespace}):
-{chr(10).join(resource_list)}
-
-Execute the following steps:
-1. Check current replica count
-2. Scale the resource using kubectl scale
-3. Verify the scaling operation
-4. Monitor pod status
-
-Use the Bash tool to execute kubectl commands.
-"""
-
-        try:
-            response = self.anthropic_client.messages.create(
-                model=self._get_model_id("haiku"),
-                max_tokens=4096,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-
-            output = response.content[0].text
-            token_usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens
-            }
-
-            # Record token usage
-            if self.token_budget_manager:
-                self.token_budget_manager.record_usage(
-                    resolution_id,
-                    f"resource_scale_{execution_id}",
-                    token_usage["input_tokens"],
-                    token_usage["output_tokens"],
-                    model="haiku"
-                )
-
-            commands_executed = [
-                f"kubectl get {r.get('kind')} {r.get('name')} -n {namespace}",
-                f"kubectl scale {r.get('kind')} {r.get('name')} --replicas=<N> -n {namespace}"
-            ]
-
-            return RemediationResult(
-                execution_id=execution_id,
-                resolution_id=resolution_id,
-                action_type="resource_scale",
-                success=True,
-                output=output,
-                commands_executed=commands_executed,
-                token_usage=token_usage,
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc).isoformat(),
-                agent_transcript=output
-            )
-
-        except Exception as e:
-            logger.error(f"Resource scale failed: {e}", exc_info=True)
-            return RemediationResult(
-                execution_id=execution_id,
-                resolution_id=resolution_id,
-                action_type="resource_scale",
-                success=False,
-                output="",
-                commands_executed=[],
-                token_usage={},
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc).isoformat(),
-                error=str(e)
-            )
-
-    async def _execute_investigation(
-        self,
-        execution_id: str,
-        resolution_id: str,
-        action_description: str,
-        context: Dict[str, Any],
-        namespace: str,
-        client_id: str
-    ) -> RemediationResult:
-        """Execute investigation using Claude Sonnet agent (read-only)"""
-        started_at = datetime.now(timezone.utc).isoformat()
-
-        error_summary = context.get("error_summary", {})
-        root_causes = context.get("root_causes", [])
-
-        prompt = f"""You are a Kubernetes diagnostics expert. Investigate the following issue:
-
-**Investigation Request**: {action_description}
-
-**Namespace**: {namespace}
-
-**Error Summary**:
-- Severity: {error_summary.get('overall_severity', 'UNKNOWN')}
-- Total incidents: {error_summary.get('total_incidents', 0)}
-- Error types: {', '.join(error_summary.get('error_types', {}).keys())}
-
-**Root Causes**:
-{chr(10).join([f"- {rc.get('reason', 'Unknown')}: {rc.get('message', 'No message')}" for rc in root_causes[:5]])}
-
-Investigate using READ-ONLY commands:
-1. kubectl get pods -n {namespace}
-2. kubectl describe problematic pods
-3. kubectl logs for failing pods
-4. Check events: kubectl get events -n {namespace}
-5. Analyze patterns and provide recommendations
-
-Use Read, Bash, Grep, and Glob tools. DO NOT make any changes.
-"""
-
-        try:
-            response = self.anthropic_client.messages.create(
-                model=self._get_model_id("sonnet"),
-                max_tokens=8192,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-
-            output = response.content[0].text
-            token_usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens
-            }
-
-            # Record token usage
-            if self.token_budget_manager:
-                self.token_budget_manager.record_usage(
-                    resolution_id,
-                    f"investigation_{execution_id}",
-                    token_usage["input_tokens"],
-                    token_usage["output_tokens"],
-                    model="sonnet"
-                )
-
-            return RemediationResult(
-                execution_id=execution_id,
-                resolution_id=resolution_id,
-                action_type="investigation",
-                success=True,
-                output=output,
-                commands_executed=["READ-ONLY investigation"],
-                token_usage=token_usage,
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc).isoformat(),
-                agent_transcript=output
-            )
-
-        except Exception as e:
-            logger.error(f"Investigation failed: {e}", exc_info=True)
-            return RemediationResult(
-                execution_id=execution_id,
-                resolution_id=resolution_id,
-                action_type="investigation",
                 success=False,
                 output="",
                 commands_executed=[],
@@ -621,3 +478,35 @@ Use Read, Bash, Grep, and Glob tools. DO NOT make any changes.
             executions = [e for e in executions if e["resolution_id"] == resolution_id]
 
         return executions
+
+    async def create_custom_tool_agent(
+        self,
+        action_type: str,
+        custom_tools: List[str],
+        description: str,
+        model: str = "sonnet",
+        permission_mode: str = "default"
+    ):
+        """
+        Create a custom agent with specific tools (for future extensibility)
+
+        This allows adding new agent types dynamically:
+        - Slack integration (custom Slack MCP tool)
+        - Terraform operations (custom Terraform MCP tool)
+        - GitHub PR analysis (custom GitHub MCP tool)
+
+        Args:
+            action_type: Unique action type identifier
+            custom_tools: List of tool names (including MCP tools)
+            description: What this agent does
+            model: Model to use (haiku/sonnet/opus)
+            permission_mode: Permission mode for this agent
+        """
+        self.AGENT_CONFIGS[action_type] = {
+            "model": model,
+            "tools": custom_tools,
+            "description": description,
+            "permission_mode": permission_mode
+        }
+
+        logger.info(f"Registered custom agent: {action_type} with tools {custom_tools}")
