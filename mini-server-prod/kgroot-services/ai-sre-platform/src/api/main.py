@@ -51,6 +51,7 @@ class InvestigateRequest(BaseModel):
     namespace: Optional[str] = Field(None, description="Kubernetes namespace")
     event_type: Optional[str] = Field(None, description="Event type for routing (e.g., OOMKilled)")
     time_window_hours: float = Field(24, description="Hours of history to analyze (supports fractional: 0.167 = 10 min, 0.5 = 30 min)", ge=0.1, le=168)
+    skip_ai_synthesis: bool = Field(False, description="Skip GPT-5 synthesis to save tokens (testing mode)")
 
 
 class HealthResponse(BaseModel):
@@ -87,12 +88,16 @@ async def startup_event():
 
     logger.info("✓ Neo4j connected")
 
+    # Check environment variable for AI synthesis toggle
+    enable_ai_synthesis = os.getenv("ENABLE_AI_SYNTHESIS", "true").lower() == "true"
+
     # Initialize orchestrator
-    logger.info(f"Initializing orchestrator with model={model}...")
+    logger.info(f"Initializing orchestrator with model={model}, ai_synthesis={enable_ai_synthesis}...")
     orchestrator = AIRCAOrchestrator(
         neo4j_service=neo4j_service,
         openai_api_key=openai_api_key,
-        model=model
+        model=model,
+        enable_ai_synthesis=enable_ai_synthesis
     )
 
     logger.info("=== AI SRE Platform ready ===")
@@ -191,7 +196,8 @@ async def investigate(request: InvestigateRequest):
             time_window_end=time_window_end,
             service=request.service,
             namespace=request.namespace,
-            event_type=request.event_type
+            event_type=request.event_type,
+            skip_ai_synthesis=request.skip_ai_synthesis
         )
 
         # Convert to dict for JSON response

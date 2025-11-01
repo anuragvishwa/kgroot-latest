@@ -36,7 +36,8 @@ class AIRCAOrchestrator:
         neo4j_service,
         openai_api_key: str,
         model: str = "gpt-5",
-        enable_semantic_search: bool = True
+        enable_semantic_search: bool = True,
+        enable_ai_synthesis: bool = True
     ):
         """
         Initialize orchestrator
@@ -46,12 +47,14 @@ class AIRCAOrchestrator:
             openai_api_key: OpenAI API key for GPT-5
             model: Model to use (gpt-5, gpt-4o, etc.)
             enable_semantic_search: Enable semantic search with embeddings (GraphRAG)
+            enable_ai_synthesis: Enable GPT-5 synthesis (set False for testing to save tokens)
         """
         self.neo4j = neo4j_service
         self.router = RuleRouter()
         self.openai_client = AsyncOpenAI(api_key=openai_api_key)
         self.model = model
         self.semantic_search_enabled = enable_semantic_search
+        self.ai_synthesis_enabled = enable_ai_synthesis
 
         # Initialize embedding service for GraphRAG
         self.embedding_service = None
@@ -111,7 +114,8 @@ class AIRCAOrchestrator:
         time_window_end: Optional[datetime] = None,
         service: Optional[str] = None,
         namespace: Optional[str] = None,
-        event_type: Optional[str] = None
+        event_type: Optional[str] = None,
+        skip_ai_synthesis: bool = False
     ) -> InvestigationResult:
         """
         Perform complete AI-powered RCA investigation
@@ -124,6 +128,7 @@ class AIRCAOrchestrator:
             service: Optional service name
             namespace: Optional namespace
             event_type: Optional event type for routing
+            skip_ai_synthesis: Skip GPT-5 synthesis for this request (testing mode)
 
         Returns:
             Complete investigation result
@@ -165,12 +170,19 @@ class AIRCAOrchestrator:
                 scope
             )
 
-            # Step 4: Synthesize findings using GPT-5
-            synthesis = await self._synthesize_findings(
-                query=query,
-                scope=scope,
-                agent_results=agent_results
-            )
+            # Step 4: Synthesize findings using GPT-5 (if enabled)
+            # Check both global flag and per-request flag
+            if self.ai_synthesis_enabled and not skip_ai_synthesis:
+                synthesis = await self._synthesize_findings(
+                    query=query,
+                    scope=scope,
+                    agent_results=agent_results
+                )
+            else:
+                # Skip AI synthesis - return raw agent findings
+                synthesis = self._create_basic_synthesis(agent_results)
+                reason = "per-request skip" if skip_ai_synthesis else "globally disabled"
+                logger.info(f"AI synthesis skipped ({reason}) - returning raw findings only")
 
             # Calculate total cost and latency
             total_cost = sum(
@@ -475,6 +487,54 @@ Provide a JSON response with:
                 "domain_pattern_match": 0.0
             }
         }
+
+    def _create_basic_synthesis(self, agent_results: Dict[str, AgentResult]) -> InvestigationSynthesis:
+        """Basic synthesis without AI - just return raw findings (for testing)"""
+        logger.info("Creating basic synthesis without AI (testing mode)")
+
+        # Extract root causes from GraphAgent findings
+        root_causes = []
+        for result in agent_results.values():
+            for finding in result.findings:
+                if finding.kind == "root_cause":
+                    root_causes.append({
+                        "event_id": finding.detail.get('event_id', 'unknown'),
+                        "reason": finding.detail.get('reason', 'Unknown'),
+                        "resource": f"{finding.detail.get('resource_kind', 'Unknown')}/{finding.detail.get('resource_name', 'Unknown')}",
+                        "explanation": f"Raw finding from graph analysis (AI synthesis disabled)",
+                        "confidence": finding.confidence,
+                        "remediation_steps": ["AI synthesis disabled - enable for detailed remediation steps"],
+                        "commands": [],
+                        "topology": {}
+                    })
+
+        if not root_causes:
+            root_causes = [{
+                "event_id": "no-findings",
+                "reason": "No root causes found",
+                "resource": "N/A",
+                "explanation": "GraphAgent returned 0 findings (AI synthesis disabled)",
+                "confidence": 0.0,
+                "remediation_steps": ["Check if events exist in the time window", "Run build-causality if needed"],
+                "commands": [],
+                "topology": {}
+            }]
+
+        summary = f"Raw findings: {len(root_causes)} root cause(s) identified. AI synthesis disabled for testing."
+
+        return InvestigationSynthesis(
+            summary=summary,
+            root_causes=root_causes,
+            contributing_factors=["AI synthesis disabled - raw findings only"],
+            blast_radius={"affected_services": [], "affected_pods": 0, "affected_namespaces": []},
+            immediate_actions=["Enable AI synthesis for detailed analysis", "Review raw findings above"],
+            confidence=0.50,
+            confidence_breakdown={
+                "graph_analysis": 0.85,
+                "temporal_correlation": 0.0,
+                "domain_pattern_match": 0.0
+            }
+        )
 
     def _fallback_synthesis(self, agent_results: Dict[str, AgentResult]) -> InvestigationSynthesis:
         """Fallback synthesis without LLM (if GPT-5 fails)"""
