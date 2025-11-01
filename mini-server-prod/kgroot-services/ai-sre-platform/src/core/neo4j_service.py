@@ -1,6 +1,7 @@
 """Neo4j service for causality graph queries"""
 
 from neo4j import GraphDatabase, Driver
+from neo4j.time import DateTime
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import logging
@@ -102,12 +103,17 @@ class Neo4jService:
         logger.info(f"Time window: from={from_time} to={to_time} (range={time_range_hours}h)")
         logger.info(f"Filters: limit={limit}, max_upstream={max_upstream_causes}")
 
+        # Convert Python datetime to Neo4j DateTime
+        neo4j_from_time = DateTime.from_native(from_time) if from_time else None
+        neo4j_to_time = DateTime.from_native(to_time) if to_time else None
+        logger.info(f"Converted to Neo4j DateTime: from={neo4j_from_time}, to={neo4j_to_time}")
+
         with self.driver.session() as session:
             result = session.run(
                 query,
                 client_id=client_id,
-                from_time=from_time,
-                to_time=to_time,
+                from_time=neo4j_from_time,
+                to_time=neo4j_to_time,
                 namespace=namespace,
                 limit=limit,
                 max_upstream=max_upstream_causes
