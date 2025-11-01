@@ -122,7 +122,63 @@ class Neo4jService:
             """
             test_result = session.run(test_query, client_id=client_id, from_time=from_time, to_time=to_time)
             test_record = test_result.single()
-            logger.info(f"TEST QUERY: Found {test_record['total_count']} total events in time range")
+            logger.info(f"TEST QUERY 1: Found {test_record['total_count']} total events in time range")
+
+            # Test 2: After basic filters
+            test_query2 = """
+            MATCH (e:Episodic {client_id: $client_id})
+            WHERE e.event_time > $from_time
+              AND e.event_time <= $to_time
+              AND e.etype IN ['k8s.event', 'k8s.log']
+              AND NOT e.reason IN ['Pulled', 'Created', 'Started', 'Scheduled', 'Completed',
+                                   'SuccessfulCreate', 'SuccessfulDelete', 'Killing', 'SawCompletedJob', 'LOG_INFO']
+            RETURN count(e) as after_basic_filters
+            """
+            test_result2 = session.run(test_query2, client_id=client_id, from_time=from_time, to_time=to_time)
+            test_record2 = test_result2.single()
+            logger.info(f"TEST QUERY 2: {test_record2['after_basic_filters']} events after basic filters")
+
+            # Test 3: After resource + namespace filter
+            test_query3 = """
+            MATCH (e:Episodic {client_id: $client_id})
+            WHERE e.event_time > $from_time
+              AND e.event_time <= $to_time
+              AND e.etype IN ['k8s.event', 'k8s.log']
+              AND NOT e.reason IN ['Pulled', 'Created', 'Started', 'Scheduled', 'Completed',
+                                   'SuccessfulCreate', 'SuccessfulDelete', 'Killing', 'SawCompletedJob', 'LOG_INFO']
+            OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource)
+            WHERE (r.client_id = $client_id OR (r.client_id IS NULL AND r.ns IS NOT NULL))
+            WITH e, r
+            WHERE $namespace IS NULL OR r.ns = $namespace
+            RETURN count(e) as after_resource_filter
+            """
+            test_result3 = session.run(test_query3, client_id=client_id, from_time=from_time, to_time=to_time, namespace=namespace)
+            test_record3 = test_result3.single()
+            logger.info(f"TEST QUERY 3: {test_record3['after_resource_filter']} events after resource+namespace filter")
+
+            # Test 4: After POTENTIAL_CAUSE filters
+            test_query4 = """
+            MATCH (e:Episodic {client_id: $client_id})
+            WHERE e.event_time > $from_time
+              AND e.event_time <= $to_time
+              AND e.etype IN ['k8s.event', 'k8s.log']
+              AND NOT e.reason IN ['Pulled', 'Created', 'Started', 'Scheduled', 'Completed',
+                                   'SuccessfulCreate', 'SuccessfulDelete', 'Killing', 'SawCompletedJob', 'LOG_INFO']
+            OPTIONAL MATCH (e)-[:ABOUT]->(r:Resource)
+            WHERE (r.client_id = $client_id OR (r.client_id IS NULL AND r.ns IS NOT NULL))
+            WITH e, r
+            WHERE $namespace IS NULL OR r.ns = $namespace
+            OPTIONAL MATCH (upstream:Episodic {client_id: $client_id})-[:POTENTIAL_CAUSE]->(e)
+            OPTIONAL MATCH (e)-[:POTENTIAL_CAUSE]->(downstream:Episodic {client_id: $client_id})
+            WITH e, r,
+                 count(DISTINCT upstream) as upstream_count,
+                 count(DISTINCT downstream) as effects_caused
+            WHERE effects_caused > 0 AND upstream_count <= $max_upstream
+            RETURN count(e) as final_count
+            """
+            test_result4 = session.run(test_query4, client_id=client_id, from_time=from_time, to_time=to_time, namespace=namespace, max_upstream=max_upstream_causes)
+            test_record4 = test_result4.single()
+            logger.info(f"TEST QUERY 4: {test_record4['final_count']} events after all filters (should match main query)")
 
             # Now run the full query
             result = session.run(
