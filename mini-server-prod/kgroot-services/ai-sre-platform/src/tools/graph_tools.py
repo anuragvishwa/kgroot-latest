@@ -36,7 +36,10 @@ class Neo4jRootCauseTool(BaseTool):
             from_time = params.get('from_time')
             to_time = params.get('to_time')
 
-            logger.info(f"Finding root causes for {client_id}, namespace={namespace}, time_range={time_range_hours}h, from_time={from_time}, to_time={to_time}")
+            logger.info(f"=== NEO4J_TOOL DEBUG ===")
+            logger.info(f"Tool received params: client_id={client_id}, namespace={namespace}")
+            logger.info(f"Tool received time_range_hours={time_range_hours} (type={type(time_range_hours).__name__})")
+            logger.info(f"Tool received from_time={from_time}, to_time={to_time}")
 
             root_causes = self.neo4j.find_root_causes(
                 client_id=client_id,
@@ -47,6 +50,11 @@ class Neo4jRootCauseTool(BaseTool):
                 to_time=to_time
             )
 
+            logger.info(f"Neo4j service returned {len(root_causes)} root causes")
+            if root_causes:
+                logger.info(f"Sample root cause: {root_causes[0]}")
+            logger.info(f"=== END NEO4J_TOOL DEBUG ===")
+
             return {
                 "success": True,
                 "data": root_causes,
@@ -54,7 +62,7 @@ class Neo4jRootCauseTool(BaseTool):
             }
 
         except Exception as e:
-            logger.error(f"Failed to find root causes: {e}")
+            logger.error(f"Failed to find root causes: {e}", exc_info=True)
             return {
                 "success": False,
                 "data": [],

@@ -96,6 +96,12 @@ class Neo4jService:
         if not from_time:
             from_time = to_time - timedelta(hours=time_range_hours)
 
+        # DEBUG: Log parameters
+        logger.info(f"=== FIND_ROOT_CAUSES DEBUG ===")
+        logger.info(f"Parameters: client_id={client_id}, namespace={namespace}")
+        logger.info(f"Time window: from={from_time} to={to_time} (range={time_range_hours}h)")
+        logger.info(f"Filters: limit={limit}, max_upstream={max_upstream_causes}")
+
         with self.driver.session() as session:
             result = session.run(
                 query,
@@ -108,7 +114,9 @@ class Neo4jService:
             )
 
             root_causes = []
+            record_count = 0
             for record in result:
+                record_count += 1
                 root_causes.append({
                     "event_id": record["event_id"],
                     "reason": record["reason"],
@@ -119,6 +127,12 @@ class Neo4jService:
                     "upstream_causes": record["upstream_causes"],
                     "blast_radius": record["blast_radius"]
                 })
+
+            # DEBUG: Log results
+            logger.info(f"Neo4j query returned {record_count} records")
+            if record_count > 0:
+                logger.info(f"Sample result: {root_causes[0]}")
+            logger.info(f"=== END FIND_ROOT_CAUSES DEBUG ===")
 
             return root_causes
 
