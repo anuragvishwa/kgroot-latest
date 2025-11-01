@@ -50,7 +50,7 @@ class InvestigateRequest(BaseModel):
     service: Optional[str] = Field(None, description="Service name to focus on")
     namespace: Optional[str] = Field(None, description="Kubernetes namespace")
     event_type: Optional[str] = Field(None, description="Event type for routing (e.g., OOMKilled)")
-    time_window_hours: int = Field(24, description="Hours of history to analyze", ge=1, le=168)
+    time_window_hours: float = Field(24, description="Hours of history to analyze (supports fractional: 0.167 = 10 min, 0.5 = 30 min)", ge=0.1, le=168)
 
 
 class HealthResponse(BaseModel):
