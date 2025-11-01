@@ -67,27 +67,67 @@ class RemediationExecutor:
         self,
         anthropic_api_key: str,
         kubectl_context: Optional[str] = None,
-        token_budget_manager=None
+        token_budget_manager=None,
+        use_bedrock: bool = False,
+        aws_region: str = "us-east-1"
     ):
         """
         Args:
-            anthropic_api_key: Anthropic API key for Claude
+            anthropic_api_key: Anthropic API key for Claude (ignored if use_bedrock=True)
             kubectl_context: Optional kubectl context for multi-cluster
             token_budget_manager: TokenBudgetManager for tracking usage
+            use_bedrock: Use AWS Bedrock instead of direct Anthropic API
+            aws_region: AWS region for Bedrock (default: us-east-1)
         """
         self.api_key = anthropic_api_key
         self.kubectl_context = kubectl_context
         self.token_budget_manager = token_budget_manager
+        self.use_bedrock = use_bedrock
+        self.aws_region = aws_region
         self.active_executions: Dict[str, Dict[str, Any]] = {}
 
-        # Try to import Claude Agent SDK
+        # Model ID mappings for Bedrock
+        self.bedrock_models = {
+            "haiku": "anthropic.claude-3-haiku-20240307-v1:0",
+            "sonnet": "us.anthropic.claude-sonnet-4-5-v1:0",  # Sonnet 4.5
+            "sonnet-3.5": "anthropic.claude-3-5-sonnet-20241022-v2:0"  # Sonnet 3.5
+        }
+        self.direct_models = {
+            "haiku": "claude-3-haiku-20240307",
+            "sonnet": "claude-3-5-sonnet-20241022",
+            "sonnet-3.5": "claude-3-5-sonnet-20241022"
+        }
+
+        # Initialize client based on provider
         try:
-            from anthropic import Anthropic
-            self.anthropic_client = Anthropic(api_key=anthropic_api_key)
-            logger.info("Claude Agent SDK initialized")
-        except ImportError:
-            logger.error("anthropic package not installed. Install with: pip install anthropic")
+            if use_bedrock:
+                # AWS Bedrock integration
+                import boto3
+                from anthropic import AnthropicBedrock
+
+                # Initialize Anthropic Bedrock client
+                # Uses AWS credentials from environment (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+                # or IAM role
+                self.anthropic_client = AnthropicBedrock(
+                    aws_region=aws_region
+                )
+                logger.info(f"Claude Agent SDK initialized via AWS Bedrock (region: {aws_region})")
+            else:
+                # Direct Anthropic API
+                from anthropic import Anthropic
+                self.anthropic_client = Anthropic(api_key=anthropic_api_key)
+                logger.info("Claude Agent SDK initialized via Anthropic API")
+        except ImportError as e:
+            logger.error(f"Failed to import required packages: {e}")
+            logger.error("Install with: pip install anthropic boto3")
             self.anthropic_client = None
+
+    def _get_model_id(self, model_type: str) -> str:
+        """Get correct model ID based on provider"""
+        if self.use_bedrock:
+            return self.bedrock_models.get(model_type, self.bedrock_models["sonnet"])
+        else:
+            return self.direct_models.get(model_type, self.direct_models["sonnet"])
 
     async def execute_remediation(
         self,
@@ -225,7 +265,7 @@ Use the Bash tool to execute kubectl commands.
         # Use Claude Messages API (simulating agent behavior)
         try:
             response = self.anthropic_client.messages.create(
-                model="claude-3-haiku-20240307",
+                model=self._get_model_id("haiku"),
                 max_tokens=4096,
                 messages=[
                     {"role": "user", "content": prompt}
@@ -331,7 +371,7 @@ Use Read, Edit, and Bash tools as needed.
 
         try:
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=self._get_model_id("sonnet"),
                 max_tokens=8192,
                 messages=[
                     {"role": "user", "content": prompt}
@@ -421,7 +461,7 @@ Use the Bash tool to execute kubectl commands.
 
         try:
             response = self.anthropic_client.messages.create(
-                model="claude-3-haiku-20240307",
+                model=self._get_model_id("haiku"),
                 max_tokens=4096,
                 messages=[
                     {"role": "user", "content": prompt}
@@ -518,7 +558,7 @@ Use Read, Bash, Grep, and Glob tools. DO NOT make any changes.
 
         try:
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=self._get_model_id("sonnet"),
                 max_tokens=8192,
                 messages=[
                     {"role": "user", "content": prompt}

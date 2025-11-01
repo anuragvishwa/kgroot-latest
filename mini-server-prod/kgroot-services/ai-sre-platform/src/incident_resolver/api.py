@@ -69,14 +69,19 @@ def initialize_services(neo4j_service=None, base_url: str = "http://localhost:80
     approval_engine = ApprovalEngine(default_timeout_seconds=300)
     token_budget_manager = TokenBudgetManager()
 
-    # Get API keys from environment
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not anthropic_api_key:
-        logger.warning("ANTHROPIC_API_KEY not set - remediation executor will be disabled")
+    # Get API keys and AWS config from environment
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    use_bedrock = os.getenv("USE_BEDROCK", "true").lower() == "true"  # Default to Bedrock
+    aws_region = os.getenv("AWS_REGION", "us-east-1")
+
+    if not use_bedrock and not anthropic_api_key:
+        logger.warning("ANTHROPIC_API_KEY not set and USE_BEDROCK=false - remediation executor will be disabled")
 
     remediation_executor = RemediationExecutor(
         anthropic_api_key=anthropic_api_key or "dummy",
-        token_budget_manager=token_budget_manager
+        token_budget_manager=token_budget_manager,
+        use_bedrock=use_bedrock,
+        aws_region=aws_region
     )
 
     rollback_manager = RollbackManager()
